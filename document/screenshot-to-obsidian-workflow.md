@@ -104,6 +104,8 @@ group-002: image-c.png
 
 每次点击生成时，请求内容由三部分组成。
 
+系统规则存放在后端 JSON 文件 `app/system-prompt.json`，前端可以读取和修改。后端每次生成时读取当前 JSON，不在前端重复维护默认 prompt。
+
 ### 系统规则
 
 ```text

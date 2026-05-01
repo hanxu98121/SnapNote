@@ -4,8 +4,9 @@
 
 - This workspace is not currently a git repo and has no CI or test config yet.
 - App implementation now uses root `package.json` scripts: `npm run dev` starts Express and Vite; `npm run server` starts only the API; `npm run client` starts only Vite; `npm run build` builds the frontend.
+- The backend system prompt lives in `app/system-prompt.json` and is editable via the web UI; generation should read it at request time, not duplicate it in frontend code.
 - The active product spec is `document/screenshot-to-obsidian-workflow.md`; treat it as the source of truth until implementation files exist.
-- `ocr_compare/` is a prior OCR comparison experiment, not the target app. It showed traditional OCR is insufficient for the desired screenshot-to-note workflow.
+- The old OCR comparison experiment has been removed; do not reintroduce OCR unless the user explicitly asks for experiments.
 
 ## Target Workflow
 
@@ -15,6 +16,7 @@
 - The UI concept is three columns per dynamic group: images on the left, per-group user instructions in the middle, editable Markdown output on the right.
 - Images must be draggable into groups; all images in a group share one instruction and are sent together to the multimodal model in display order.
 - Support iterative regeneration: when output is unsatisfactory, send the original images, current instruction, and previous Markdown back to the model.
+- `Generate all` should process groups sequentially, not concurrently, to avoid multimodal API timeouts/rate limits.
 
 ## Model/API Constraints
 
@@ -32,7 +34,3 @@
 - Use Markdown tables for structured attributes or comparisons.
 - Include a final usage suggestion section with recommended filename, internal links, and tags.
 - Keep the first implementation simple: textarea is acceptable; do not add a rich text editor unless requested.
-
-## Existing Experiment Command
-
-- If revisiting OCR experiments only, `ocr_compare/run_ocr_compare.py` accepts `--input`, `--output`, `--engine {paddleocr,rapidocr,surya,doctr}`, and `--limit`; by default it reads `/mnt/synology-photo/Xu/2024Sept/document` and writes `/home/hanxu/Documents/ocr_compare/output`.

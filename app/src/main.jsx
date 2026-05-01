@@ -8,6 +8,9 @@ function App() {
   const groupsRef = useRef([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [promptSaved, setPromptSaved] = useState(false);
+  const [generatingAll, setGeneratingAll] = useState(false);
   const [providerConfig, setProviderConfig] = useState({
     provider: 'doubao',
     apiKey: '',
@@ -18,7 +21,38 @@ function App() {
 
   useEffect(() => {
     refreshState();
+    refreshSystemPrompt();
   }, []);
+
+  async function refreshSystemPrompt() {
+    try {
+      const response = await fetch('/api/system-prompt');
+      if (!response.ok) throw new Error(await readError(response));
+      const data = await response.json();
+      setSystemPrompt(data.prompt || '');
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function saveSystemPrompt() {
+    setError('');
+    setPromptSaved(false);
+    try {
+      const response = await fetch('/api/system-prompt', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: systemPrompt })
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      const data = await response.json();
+      setSystemPrompt(data.prompt || '');
+      setPromptSaved(true);
+      window.setTimeout(() => setPromptSaved(false), 1800);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   useEffect(() => {
     groupsRef.current = groups;
@@ -93,6 +127,18 @@ function App() {
       );
       groupsRef.current = failedGroups;
       setGroups(failedGroups);
+    }
+  }
+
+  async function generateAll() {
+    setGeneratingAll(true);
+    try {
+      for (const group of groupsRef.current) {
+        if (group.images.length === 0) continue;
+        await generateGroup(group.id);
+      }
+    } finally {
+      setGeneratingAll(false);
     }
   }
 
@@ -173,6 +219,9 @@ function App() {
         </div>
         <div className="actions">
           <button onClick={refreshState}>Refresh input_image</button>
+          <button className="primary" onClick={generateAll} disabled={generatingAll || groups.every((group) => group.images.length === 0)}>
+            {generatingAll ? 'Generating all...' : 'Generate all'}
+          </button>
           <button onClick={createEmptyGroup}>New empty group</button>
         </div>
       </header>
@@ -182,6 +231,7 @@ function App() {
       </section>
 
       <ProviderPanel config={providerConfig} onChange={setProviderConfig} />
+      <SystemPromptPanel prompt={systemPrompt} saved={promptSaved} onChange={setSystemPrompt} onSave={saveSystemPrompt} />
 
       {error && <section className="error">{error}</section>}
       {loading ? <section className="empty">Loading images and state...</section> : null}
@@ -205,6 +255,34 @@ function App() {
         ))}
       </section>
     </main>
+  );
+}
+
+function SystemPromptPanel({ prompt, saved, onChange, onSave }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <section className="system-prompt-panel">
+      <div className="system-prompt-head">
+        <div>
+          <p className="eyebrow">Backend JSON prompt</p>
+          <h2>System prompt</h2>
+        </div>
+        <div className="actions">
+          <button onClick={() => setOpen((value) => !value)}>{open ? 'Hide prompt' : 'Show prompt'}</button>
+          <button onClick={onSave}>Save prompt</button>
+        </div>
+      </div>
+      {open ? (
+        <textarea
+          className="system-prompt-textarea"
+          value={prompt}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="System prompt JSON is stored at app/system-prompt.json"
+        />
+      ) : null}
+      {saved ? <p className="saved-path">System prompt saved to <code>app/system-prompt.json</code>.</p> : null}
+    </section>
   );
 }
 

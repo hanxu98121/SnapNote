@@ -1,0 +1,23 @@
+{
+  "name": "screenshot-to-obsidian",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "node app/server.js",
+    "client": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "concurrently": "latest",
+    "express": "latest",
+    "openai": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "sharp": "^0.34.5",
+    "vite": "latest"
+  }
+}

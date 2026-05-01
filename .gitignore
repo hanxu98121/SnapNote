@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.*
+state.json
+input_image/*
+input_text/*
+output/*
+!input_image/.gitkeep
+!input_text/.gitkeep
+!output/.gitkeep

@@ -110,6 +110,14 @@ function App() {
     setBulkLoading(true);
     setBulkLoadStatus(`Preparing ${files.length} image(s)...`);
     try {
+      if (files.some(isRawImageFile)) {
+        setBulkLoadStatus('Detected DNG/raw image(s). Importing locally so the server can transcode them...');
+        await uploadImagesLocally(files);
+        setBulkLoadStatus(`Imported ${files.length} image(s) locally.`);
+        await refreshState();
+        return;
+      }
+
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index];
         setBulkLoadStatus(`Resizing ${file.name} (${index + 1}/${files.length})...`);
@@ -144,7 +152,7 @@ function App() {
   async function uploadImagesLocally(files) {
     const payload = await Promise.all(
       files.map(async (file) => {
-        const uploadFile = await prepareImageForUpload(file);
+        const uploadFile = isRawImageFile(file) ? file : await prepareImageForUpload(file);
         return {
           name: uploadFile.name,
           type: uploadFile.type,
@@ -468,7 +476,7 @@ function App() {
           ref={bulkLoadInputRef}
           className="bulk-load-input"
           type="file"
-          accept="image/*,.heic,.heif,.bmp,.gif,.tif,.tiff,.avif"
+          accept="image/*,.dng,.heic,.heif,.bmp,.gif,.tif,.tiff,.avif"
           multiple
           onChange={handleBulkLoadChange}
         />
@@ -832,6 +840,14 @@ function normalizeConcurrency(value) {
   const parsed = Number.parseInt(value, 10);
   if (Number.isNaN(parsed)) return 1;
   return Math.min(10, Math.max(1, parsed));
+}
+
+function isRawImageFile(file) {
+  return pathExt(file?.name).toLowerCase() === '.dng';
+}
+
+function pathExt(filename) {
+  return filename?.includes('.') ? filename.slice(filename.lastIndexOf('.')) : '';
 }
 
 function buildExportMarkdown(groups) {

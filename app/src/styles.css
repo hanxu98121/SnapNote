@@ -236,6 +236,52 @@ code {
   margin: 0;
   overflow: hidden;
   padding: 10px;
+  position: relative;
+}
+
+.image-card.selected {
+  border-color: #4868ff;
+  box-shadow: 0 0 0 3px rgba(72, 104, 255, 0.12);
+}
+
+.image-select {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #c8d3e2;
+  border-radius: 999px;
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  right: 18px;
+  top: 18px;
+  width: 32px;
+  z-index: 1;
+}
+
+.image-select:hover:not(:disabled) {
+  background: #f7f9fc;
+  border-color: #8090a8;
+}
+
+.image-select-box {
+  align-items: center;
+  color: #ffffff;
+  background: #4868ff;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 14px;
+  height: 20px;
+  justify-content: center;
+  line-height: 1;
+  width: 20px;
+}
+
+.image-card:not(.selected) .image-select-box {
+  background: transparent;
+  color: transparent;
+  box-shadow: inset 0 0 0 2px #8c99ad;
 }
 
 .image-card img,

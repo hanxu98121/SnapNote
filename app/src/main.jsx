@@ -11,6 +11,7 @@ const EXPORT_TITLE = 'SnapNote Output';
 function App() {
   const [images, setImages] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [selectedImageIds, setSelectedImageIds] = useState([]);
   const groupsRef = useRef([]);
   const bulkLoadInputRef = useRef(null);
   const [loading, setLoading] = useState(true);
@@ -61,6 +62,11 @@ function App() {
   useEffect(() => {
     groupsRef.current = groups;
   }, [groups]);
+
+  useEffect(() => {
+    const currentImageIds = new Set(images.map((image) => image.id));
+    setSelectedImageIds((selected) => selected.filter((imageId) => currentImageIds.has(imageId)));
+  }, [images]);
 
   useEffect(() => {
     writeStoredProviderConfig(providerConfig);
@@ -255,33 +261,50 @@ function App() {
   }
 
   async function deleteImage(imageId) {
+    await deleteImages([imageId]);
+  }
+
+  async function deleteImages(imageIds) {
     setError('');
-    const image = imageMap.get(imageId);
-    if (!image) return;
+    const uniqueIds = Array.from(new Set(imageIds)).filter((imageId) => imageMap.has(imageId));
+    if (uniqueIds.length === 0) return;
 
     try {
-      const response = await fetch('/api/delete-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image })
-      });
-      if (!response.ok) throw new Error(await readError(response));
+      for (const imageId of uniqueIds) {
+        const image = imageMap.get(imageId);
+        const response = await fetch('/api/delete-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image })
+        });
+        if (!response.ok) throw new Error(await readError(response));
+      }
 
-      const nextImages = images.filter((item) => item.id !== imageId);
+      const deletedIds = new Set(uniqueIds);
+      const nextImages = images.filter((item) => !deletedIds.has(item.id));
       const nextGroups = groupsRef.current
         .map((group) => ({
           ...group,
-          images: group.images.filter((id) => id !== imageId),
+          images: group.images.filter((id) => !deletedIds.has(id)),
           updatedAt: new Date().toISOString()
         }))
         .filter((group) => group.images.length > 0 || group.instruction?.trim() || group.markdown?.trim());
+
       setImages(nextImages);
+      setSelectedImageIds((selected) => selected.filter((imageId) => !deletedIds.has(imageId)));
       groupsRef.current = nextGroups;
       setGroups(nextGroups);
       writeStoredGroups(nextGroups);
     } catch (err) {
       setError(err.message);
     }
+  }
+
+  async function handleBulkDeleteSelected() {
+    if (selectedImageIds.length === 0) return;
+    const confirmMessage = `Delete ${selectedImageIds.length} selected picture(s)? This will remove them from their groups too.`;
+    if (!window.confirm(confirmMessage)) return;
+    await deleteImages(selectedImageIds);
   }
 
   async function exportAllMarkdown() {
@@ -377,6 +400,9 @@ function App() {
           <button className="primary" onClick={generateAll} disabled={generatingAll || groups.every((group) => group.images.length === 0)}>
             {generatingAll ? 'Generating all...' : 'Generate all'}
           </button>
+          <button onClick={handleBulkDeleteSelected} disabled={selectedImageIds.length === 0}>
+            Delete selected{selectedImageIds.length > 0 ? ` (${selectedImageIds.length})` : ''}
+          </button>
           <button onClick={exportAllMarkdown} disabled={!groups.some((group) => group.markdown?.trim())}>
             Export Markdown
           </button>
@@ -402,6 +428,7 @@ function App() {
             key={group.id}
             group={group}
             imageMap={imageMap}
+            selectedImageIds={selectedImageIds}
             onInstructionChange={(instruction) => updateGroup(group.id, { instruction })}
             onPersist={() => persistGroups(groupsRef.current)}
             onMarkdownChange={(markdown) => updateGroup(group.id, { markdown, status: group.status === 'saved' ? 'generated' : group.status })}
@@ -411,6 +438,11 @@ function App() {
             onDropImage={moveImageToGroup}
             onSplitImage={splitImage}
             onDeleteImage={deleteImage}
+            onToggleImageSelection={(imageId) =>
+              setSelectedImageIds((selected) =>
+                selected.includes(imageId) ? selected.filter((id) => id !== imageId) : [...selected, imageId]
+              )
+            }
           />
         ))}
       </section>
@@ -488,7 +520,21 @@ function ProviderPanel({ config, onChange }) {
   );
 }
 
-function GroupRow({ group, imageMap, onInstructionChange, onPersist, onMarkdownChange, onGenerate, onSave, onCopy, onDropImage, onSplitImage, onDeleteImage }) {
+function GroupRow({
+  group,
+  imageMap,
+  selectedImageIds,
+  onInstructionChange,
+  onPersist,
+  onMarkdownChange,
+  onGenerate,
+  onSave,
+  onCopy,
+  onDropImage,
+  onSplitImage,
+  onDeleteImage,
+  onToggleImageSelection
+}) {
   const [dragOver, setDragOver] = useState(false);
 
   function handleDragStart(event, imageName) {
@@ -524,8 +570,27 @@ function GroupRow({ group, imageMap, onInstructionChange, onPersist, onMarkdownC
           {group.images.length === 0 ? <div className="drop-placeholder">Drop images here</div> : null}
           {group.images.map((imageId) => {
             const image = imageMap.get(imageId);
+            const selected = selectedImageIds.includes(imageId);
             return (
-              <figure className="image-card" draggable onDragStart={(event) => handleDragStart(event, imageId)} key={imageId}>
+              <figure
+                className={`image-card ${selected ? 'selected' : ''}`}
+                draggable
+                onDragStart={(event) => handleDragStart(event, imageId)}
+                key={imageId}
+              >
+                <button
+                  type="button"
+                  className="image-select"
+                  aria-pressed={selected}
+                  aria-label={`${selected ? 'Deselect' : 'Select'} ${image?.name || imageId}`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onToggleImageSelection(imageId);
+                  }}
+                >
+                  <span className="image-select-box">{selected ? '✓' : ''}</span>
+                </button>
                 {image ? <img src={image.url} alt={image.name} /> : <div className="missing-image">Missing image</div>}
                 <figcaption title={image?.name || imageId}>
                   {image?.name || imageId}

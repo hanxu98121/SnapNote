@@ -737,6 +737,7 @@ function GroupRow({
 
   async function handleDrop(event) {
     event.preventDefault();
+    event.stopPropagation();
     setDragOver(false);
     const files = Array.from(event.dataTransfer.files || []).filter((file) => file.type.startsWith('image/') || isKnownImageFile(file));
     if (files.length > 0) {
@@ -882,20 +883,23 @@ function normalizeImages(rawImages) {
 }
 
 function normalizeGroups(rawGroups, images) {
-  const idByName = new Map(images.map((image) => [image.name, image.id]));
+  const imageIdByAlias = buildImageIdByAlias(images);
   return rawGroups.map((group) => ({
     ...group,
-    images: (group.images || []).map((id) => idByName.get(id) || id)
+    images: (group.images || []).map((id) => imageIdByAlias.get(id) || id)
   }));
 }
 
 function mergeGroupsWithImages(rawGroups, images) {
   const imageIds = new Set(images.map((image) => image.id));
+  const imageIdByAlias = buildImageIdByAlias(images);
   const groupedIds = new Set();
   const groups = [];
 
   for (const group of rawGroups) {
-    const keptImages = (group.images || []).filter((id) => imageIds.has(id));
+    const keptImages = Array.from(
+      new Set((group.images || []).map((id) => imageIdByAlias.get(id) || id).filter((id) => imageIds.has(id)))
+    );
     if (keptImages.length > 0) {
       keptImages.forEach((id) => groupedIds.add(id));
     }
@@ -916,6 +920,19 @@ function mergeGroupsWithImages(rawGroups, images) {
   }
 
   return groups;
+}
+
+function buildImageIdByAlias(images) {
+  const aliases = new Map();
+  for (const image of images) {
+    if (image.id) aliases.set(image.id, image.id);
+    if (image.name) aliases.set(image.name, image.id);
+    if (image.pathname) {
+      aliases.set(image.pathname, image.id);
+      aliases.set(`blob:${image.pathname}`, image.id);
+    }
+  }
+  return aliases;
 }
 
 function readStoredGroups() {

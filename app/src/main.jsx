@@ -5,6 +5,7 @@ import './styles.css';
 
 const GROUPS_STORAGE_KEY = 'snapnote.groups.v1';
 const MAX_UPLOAD_WIDTH = 1800;
+const EXPORT_TITLE = 'SnapNote Output';
 
 function App() {
   const [images, setImages] = useState([]);
@@ -252,6 +253,32 @@ function App() {
     await navigator.clipboard.writeText(group.markdown || '');
   }
 
+  async function exportAllMarkdown() {
+    setError('');
+    try {
+      const markdown = buildExportMarkdown(groupsRef.current);
+      if (!markdown) {
+        setError('No Markdown output to export yet.');
+        return;
+      }
+      const filename = `${new Date().toISOString().slice(0, 10)}-snapnote-output.md`;
+      const file = new File([markdown], filename, { type: 'text/markdown;charset=utf-8' });
+
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: EXPORT_TITLE,
+          text: EXPORT_TITLE
+        });
+        return;
+      }
+
+      downloadFile(file);
+    } catch (err) {
+      if (err.name !== 'AbortError') setError(err.message);
+    }
+  }
+
   async function splitImage(groupId, imageId) {
     const source = groupsRef.current.find((group) => group.id === groupId);
     if (!source || source.images.length < 2) return;
@@ -318,6 +345,9 @@ function App() {
           <button onClick={refreshState}>Refresh input_image</button>
           <button className="primary" onClick={generateAll} disabled={generatingAll || groups.every((group) => group.images.length === 0)}>
             {generatingAll ? 'Generating all...' : 'Generate all'}
+          </button>
+          <button onClick={exportAllMarkdown} disabled={!groups.some((group) => group.markdown?.trim())}>
+            Export Markdown
           </button>
           <button onClick={createEmptyGroup}>New empty group</button>
         </div>
@@ -579,6 +609,25 @@ function readStoredGroups() {
 
 function writeStoredGroups(groups) {
   window.localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(groups));
+}
+
+function buildExportMarkdown(groups) {
+  const sections = groups
+    .filter((group) => group.markdown?.trim())
+    .map((group) => group.markdown.trim());
+  if (sections.length === 0) return '';
+  return [`# ${EXPORT_TITLE}`, '', ...sections].join('\n\n') + '\n';
+}
+
+function downloadFile(file) {
+  const url = URL.createObjectURL(file);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = file.name;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 async function readError(response) {

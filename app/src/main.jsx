@@ -4,6 +4,7 @@ import { upload } from '@vercel/blob/client';
 import './styles.css';
 
 const GROUPS_STORAGE_KEY = 'snapnote.groups.v1';
+const PROVIDER_STORAGE_KEY = 'snapnote.provider.v1';
 const MAX_UPLOAD_WIDTH = 1800;
 const EXPORT_TITLE = 'SnapNote Output';
 
@@ -19,12 +20,7 @@ function App() {
   const [systemPrompt, setSystemPrompt] = useState('');
   const [promptSaved, setPromptSaved] = useState(false);
   const [generatingAll, setGeneratingAll] = useState(false);
-  const [providerConfig, setProviderConfig] = useState({
-    provider: 'doubao',
-    apiKey: '',
-    model: '',
-    baseURL: 'https://ark.cn-beijing.volces.com/api/v3'
-  });
+  const [providerConfig, setProviderConfig] = useState(() => readStoredProviderConfig());
   const imageMap = useMemo(() => new Map(images.map((image) => [image.id, image])), [images]);
 
   useEffect(() => {
@@ -65,6 +61,10 @@ function App() {
   useEffect(() => {
     groupsRef.current = groups;
   }, [groups]);
+
+  useEffect(() => {
+    writeStoredProviderConfig(providerConfig);
+  }, [providerConfig]);
 
   async function refreshState() {
     setLoading(true);
@@ -644,6 +644,34 @@ function readStoredGroups() {
 
 function writeStoredGroups(groups) {
   window.localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(groups));
+}
+
+function readStoredProviderConfig() {
+  const fallback = {
+    provider: 'doubao',
+    apiKey: '',
+    model: '',
+    baseURL: 'https://ark.cn-beijing.volces.com/api/v3'
+  };
+
+  try {
+    const raw = window.localStorage.getItem(PROVIDER_STORAGE_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fallback;
+    return {
+      provider: typeof parsed.provider === 'string' && parsed.provider.trim() ? parsed.provider : fallback.provider,
+      apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : fallback.apiKey,
+      model: typeof parsed.model === 'string' ? parsed.model : fallback.model,
+      baseURL: typeof parsed.baseURL === 'string' && parsed.baseURL.trim() ? parsed.baseURL : fallback.baseURL
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredProviderConfig(config) {
+  window.localStorage.setItem(PROVIDER_STORAGE_KEY, JSON.stringify(config));
 }
 
 function buildExportMarkdown(groups) {

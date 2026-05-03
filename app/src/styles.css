@@ -307,7 +307,7 @@ textarea {
   box-shadow: var(--ring);
   display: grid;
   gap: 1px;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: 150px minmax(0, 1fr);
   margin-top: 16px;
   overflow: hidden;
 }
@@ -422,7 +422,7 @@ code {
   box-shadow: var(--ring);
   display: grid;
   gap: 1px;
-  grid-template-columns: 220px 1fr 1fr 1.15fr;
+  grid-template-columns: 150px minmax(260px, 0.95fr) minmax(300px, 1.1fr) minmax(340px, 1.35fr);
   overflow: hidden;
 }
 
@@ -449,7 +449,7 @@ code {
   background: var(--line);
   display: grid;
   gap: 1px;
-  grid-template-columns: 220px 1fr 1fr 1.15fr;
+  grid-template-columns: 150px minmax(260px, 0.95fr) minmax(300px, 1.1fr) minmax(340px, 1.35fr);
 }
 
 .group-row.drag-over {

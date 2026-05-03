@@ -257,10 +257,9 @@ function extractMarkdownText(response) {
   return '';
 }
 
-function buildTextPrompt(group, previousMarkdown = '') {
-  const retryMarkdown = previousMarkdown || group.markdown || '';
-  const retryText = retryMarkdown
-    ? `\n\n这是上一版输出。如果用户要求重写、补充说明或优化结构，请在保留有用信息的基础上直接改写，不要忽略这份内容：\n${retryMarkdown}`
+function buildTextPrompt(group) {
+  const retryText = group.markdown
+    ? `\n\n这是上一版输出，如果用户要求重写或改进，请在保留有用信息的基础上生成新版 Markdown：\n${group.markdown}`
     : '';
   return `请根据这些截图生成 Obsidian Markdown。\n\n用户对本组图片的说明：\n${group.instruction || '无额外说明'}${retryText}`;
 }
@@ -418,7 +417,7 @@ app.post('/api/generate/:groupId', async (req, res, next) => {
     await writeState(state);
 
     const systemPrompt = await readSystemPrompt();
-    const content = [{ type: 'text', text: `${systemPrompt}\n\n${buildTextPrompt(group, req.body?.previousMarkdown || '')}` }];
+    const content = [{ type: 'text', text: `${systemPrompt}\n\n${buildTextPrompt(group)}` }];
     let compressedBytes = 0;
     let originalBytes = 0;
     for (const image of group.images) {

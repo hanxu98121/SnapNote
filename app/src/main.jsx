@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { upload } from '@vercel/blob/client';
 import './styles.css';
+
+const GROUPS_STORAGE_KEY = 'snapnote.groups.v1';
+const MAX_UPLOAD_WIDTH = 1800;
+const EXPORT_TITLE = 'SnapNote Output';
 
 function App() {
   const [images, setImages] = useState([]);
@@ -9,6 +14,7 @@ function App() {
   const bulkLoadInputRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkLoadStatus, setBulkLoadStatus] = useState('');
   const [error, setError] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [promptSaved, setPromptSaved] = useState(false);
@@ -19,7 +25,7 @@ function App() {
     model: '',
     baseURL: 'https://ark.cn-beijing.volces.com/api/v3'
   });
-  const imageMap = useMemo(() => new Map(images.map((image) => [image.name, image])), [images]);
+  const imageMap = useMemo(() => new Map(images.map((image) => [image.id, image])), [images]);
 
   useEffect(() => {
     refreshState();
@@ -67,9 +73,14 @@ function App() {
       const response = await fetch('/api/state');
       if (!response.ok) throw new Error(await readError(response));
       const data = await response.json();
-      setImages(data.images || []);
-      groupsRef.current = data.groups || [];
-      setGroups(data.groups || []);
+      const nextImages = normalizeImages(data.images || []);
+      const storedGroups = readStoredGroups();
+      const fallbackGroups = normalizeGroups(data.groups || [], nextImages);
+      const nextGroups = mergeGroupsWithImages(storedGroups.length > 0 ? storedGroups : fallbackGroups, nextImages);
+      setImages(nextImages);
+      groupsRef.current = nextGroups;
+      setGroups(nextGroups);
+      writeStoredGroups(nextGroups);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -88,27 +99,57 @@ function App() {
 
     setError('');
     setBulkLoading(true);
+    setBulkLoadStatus(`Preparing ${files.length} image(s)...`);
     try {
-      const payload = await Promise.all(
-        files.map(async (file) => ({
-          name: file.name,
-          type: file.type,
-          data: await fileToBase64(file)
-        }))
-      );
-
-      const response = await fetch('/api/import-images', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files: payload })
-      });
-      if (!response.ok) throw new Error(await readError(response));
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        setBulkLoadStatus(`Resizing ${file.name} (${index + 1}/${files.length})...`);
+        const uploadFile = await prepareImageForUpload(file);
+        setBulkLoadStatus(`Uploading ${uploadFile.name} (${index + 1}/${files.length})...`);
+        await upload(`images/${Date.now()}-${uploadFile.name}`, uploadFile, {
+          access: 'private',
+          handleUploadUrl: '/api/import-images',
+          multipart: true,
+          contentType: uploadFile.type,
+          onUploadProgress: ({ percentage }) => {
+            setBulkLoadStatus(`Uploading ${uploadFile.name} (${Math.round(percentage)}%)`);
+          }
+        });
+      }
+      setBulkLoadStatus(`Imported ${files.length} image(s).`);
       await refreshState();
     } catch (err) {
-      setError(err.message);
+      if (isBlobUploadUnavailable(err)) {
+        setBulkLoadStatus('Blob upload unavailable. Saving images locally...');
+        await uploadImagesLocally(files);
+        setBulkLoadStatus(`Imported ${files.length} image(s) locally.`);
+        await refreshState();
+      } else {
+        setError(err.message);
+      }
     } finally {
       setBulkLoading(false);
     }
+  }
+
+  async function uploadImagesLocally(files) {
+    const payload = await Promise.all(
+      files.map(async (file) => {
+        const uploadFile = await prepareImageForUpload(file);
+        return {
+          name: uploadFile.name,
+          type: uploadFile.type,
+          data: await blobToBase64(uploadFile)
+        };
+      })
+    );
+
+    const response = await fetch('/api/import-images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: payload })
+    });
+    if (!response.ok) throw new Error(await readError(response));
   }
 
   async function persistGroups(nextGroups) {
@@ -119,6 +160,7 @@ function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ groups: nextGroups })
     });
+    writeStoredGroups(nextGroups);
     if (!response.ok) throw new Error(await readError(response));
   }
 
@@ -146,7 +188,15 @@ function App() {
       const response = await fetch(`/api/generate/${encodeURIComponent(groupId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: providerConfig }),
+        body: JSON.stringify({
+          provider: providerConfig,
+          group: groupsRef.current.find((group) => group.id === groupId),
+          images: groupsRef.current
+            .find((group) => group.id === groupId)
+            ?.images.map((id) => imageMap.get(id))
+            .filter(Boolean),
+          systemPrompt
+        }),
         signal: controller.signal
       });
       window.clearTimeout(timeoutId);
@@ -155,6 +205,7 @@ function App() {
       const updatedGroups = groupsRef.current.map((group) => (group.id === groupId ? updated : group));
       groupsRef.current = updatedGroups;
       setGroups(updatedGroups);
+      writeStoredGroups(updatedGroups);
     } catch (err) {
       const message = err.name === 'AbortError' ? 'Generation timed out after 5 minutes. Check the model endpoint and retry.' : err.message;
       setError(message);
@@ -189,9 +240,10 @@ function App() {
       });
       if (!response.ok) throw new Error(await readError(response));
       const updated = await response.json();
-      const updatedGroups = groupsRef.current.map((item) => (item.id === groupId ? updated : item));
+      const updatedGroups = groupsRef.current.map((item) => (item.id === groupId ? { ...item, ...updated } : item));
       groupsRef.current = updatedGroups;
       setGroups(updatedGroups);
+      writeStoredGroups(updatedGroups);
     } catch (err) {
       setError(err.message);
     }
@@ -202,14 +254,70 @@ function App() {
     await navigator.clipboard.writeText(group.markdown || '');
   }
 
-  async function splitImage(groupId, imageName) {
+  async function deleteImage(imageId) {
+    setError('');
+    const image = imageMap.get(imageId);
+    if (!image) return;
+
+    try {
+      const response = await fetch('/api/delete-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image })
+      });
+      if (!response.ok) throw new Error(await readError(response));
+
+      const nextImages = images.filter((item) => item.id !== imageId);
+      const nextGroups = groupsRef.current
+        .map((group) => ({
+          ...group,
+          images: group.images.filter((id) => id !== imageId),
+          updatedAt: new Date().toISOString()
+        }))
+        .filter((group) => group.images.length > 0 || group.instruction?.trim() || group.markdown?.trim());
+      setImages(nextImages);
+      groupsRef.current = nextGroups;
+      setGroups(nextGroups);
+      writeStoredGroups(nextGroups);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function exportAllMarkdown() {
+    setError('');
+    try {
+      const markdown = buildExportMarkdown(groupsRef.current);
+      if (!markdown) {
+        setError('No Markdown output to export yet.');
+        return;
+      }
+      const filename = `${new Date().toISOString().slice(0, 10)}-snapnote-output.md`;
+      const file = new File([markdown], filename, { type: 'text/markdown;charset=utf-8' });
+
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: EXPORT_TITLE,
+          text: EXPORT_TITLE
+        });
+        return;
+      }
+
+      downloadFile(file);
+    } catch (err) {
+      if (err.name !== 'AbortError') setError(err.message);
+    }
+  }
+
+  async function splitImage(groupId, imageId) {
     const source = groupsRef.current.find((group) => group.id === groupId);
     if (!source || source.images.length < 2) return;
     const nextGroups = groupsRef.current
-      .map((group) => (group.id === groupId ? { ...group, images: group.images.filter((name) => name !== imageName) } : group))
+      .map((group) => (group.id === groupId ? { ...group, images: group.images.filter((id) => id !== imageId) } : group))
       .concat({
         id: nextGroupId(groupsRef.current),
-        images: [imageName],
+        images: [imageId],
         instruction: '',
         markdown: '',
         status: 'pending',
@@ -219,12 +327,12 @@ function App() {
     await persistGroups(nextGroups);
   }
 
-  async function moveImageToGroup(imageName, fromGroupId, toGroupId) {
+  async function moveImageToGroup(imageId, fromGroupId, toGroupId) {
     if (fromGroupId === toGroupId) return;
     const nextGroups = groupsRef.current
       .map((group) => {
-        if (group.id === fromGroupId) return { ...group, images: group.images.filter((name) => name !== imageName) };
-        if (group.id === toGroupId) return { ...group, images: [...group.images, imageName], status: 'pending' };
+        if (group.id === fromGroupId) return { ...group, images: group.images.filter((id) => id !== imageId) };
+        if (group.id === toGroupId) return { ...group, images: [...group.images, imageId], status: 'pending' };
         return group;
       })
       .filter((group) => group.images.length > 0);
@@ -269,18 +377,22 @@ function App() {
           <button className="primary" onClick={generateAll} disabled={generatingAll || groups.every((group) => group.images.length === 0)}>
             {generatingAll ? 'Generating all...' : 'Generate all'}
           </button>
+          <button onClick={exportAllMarkdown} disabled={!groups.some((group) => group.markdown?.trim())}>
+            Export Markdown
+          </button>
           <button onClick={createEmptyGroup}>New empty group</button>
         </div>
       </header>
 
       <section className="notice">
-        Put screenshots in <code>input_image/</code> or use Bulk load to import multiple pictures. Drag images between groups. Each group is sent to the AI model with one shared instruction. Markdown saves to <code>output/</code>.
+        Put screenshots in <code>input_image/</code> locally or use Bulk load to import pictures. On Vercel, imports sync to private Blob storage and group layout is kept in this browser.
       </section>
 
       <ProviderPanel config={providerConfig} onChange={setProviderConfig} />
       <SystemPromptPanel prompt={systemPrompt} saved={promptSaved} onChange={setSystemPrompt} onSave={saveSystemPrompt} />
 
       {error && <section className="error">{error}</section>}
+      {bulkLoadStatus ? <section className="notice">{bulkLoadStatus}</section> : null}
       {loading ? <section className="empty">Loading images and state...</section> : null}
       {!loading && groups.length === 0 ? <section className="empty">No screenshots found in input_image/.</section> : null}
 
@@ -298,6 +410,7 @@ function App() {
             onCopy={() => copyMarkdown(group.id)}
             onDropImage={moveImageToGroup}
             onSplitImage={splitImage}
+            onDeleteImage={deleteImage}
           />
         ))}
       </section>
@@ -375,7 +488,7 @@ function ProviderPanel({ config, onChange }) {
   );
 }
 
-function GroupRow({ group, imageMap, onInstructionChange, onPersist, onMarkdownChange, onGenerate, onSave, onCopy, onDropImage, onSplitImage }) {
+function GroupRow({ group, imageMap, onInstructionChange, onPersist, onMarkdownChange, onGenerate, onSave, onCopy, onDropImage, onSplitImage, onDeleteImage }) {
   const [dragOver, setDragOver] = useState(false);
 
   function handleDragStart(event, imageName) {
@@ -409,13 +522,19 @@ function GroupRow({ group, imageMap, onInstructionChange, onPersist, onMarkdownC
         </div>
         <div className="image-stack">
           {group.images.length === 0 ? <div className="drop-placeholder">Drop images here</div> : null}
-          {group.images.map((imageName) => {
-            const image = imageMap.get(imageName);
+          {group.images.map((imageId) => {
+            const image = imageMap.get(imageId);
             return (
-              <figure className="image-card" draggable onDragStart={(event) => handleDragStart(event, imageName)} key={imageName}>
-                {image ? <img src={image.url} alt={imageName} /> : <div className="missing-image">Missing image</div>}
-                <figcaption title={imageName}>{imageName}</figcaption>
-                {group.images.length > 1 ? <button onClick={() => onSplitImage(group.id, imageName)}>Split</button> : null}
+              <figure className="image-card" draggable onDragStart={(event) => handleDragStart(event, imageId)} key={imageId}>
+                {image ? <img src={image.url} alt={image.name} /> : <div className="missing-image">Missing image</div>}
+                <figcaption title={image?.name || imageId}>
+                  {image?.name || imageId}
+                  {image?.source ? <span className="image-source">{image.source}</span> : null}
+                </figcaption>
+                <div className="image-actions">
+                  {group.images.length > 1 ? <button onClick={() => onSplitImage(group.id, imageId)}>Split</button> : null}
+                  <button onClick={() => onDeleteImage(imageId)}>Delete</button>
+                </div>
               </figure>
             );
           })}
@@ -469,6 +588,83 @@ function nextGroupId(groups) {
   return `group-${String(index).padStart(3, '0')}`;
 }
 
+function normalizeImages(rawImages) {
+  return rawImages.map((image) => ({
+    ...image,
+    id: image.id || image.pathname || image.name,
+    name: image.name || image.pathname || image.id,
+    source: image.source || 'local'
+  }));
+}
+
+function normalizeGroups(rawGroups, images) {
+  const idByName = new Map(images.map((image) => [image.name, image.id]));
+  return rawGroups.map((group) => ({
+    ...group,
+    images: (group.images || []).map((id) => idByName.get(id) || id)
+  }));
+}
+
+function mergeGroupsWithImages(rawGroups, images) {
+  const imageIds = new Set(images.map((image) => image.id));
+  const groupedIds = new Set();
+  const groups = [];
+
+  for (const group of rawGroups) {
+    const keptImages = (group.images || []).filter((id) => imageIds.has(id));
+    if (keptImages.length === 0) continue;
+    keptImages.forEach((id) => groupedIds.add(id));
+    groups.push({ ...group, images: keptImages, status: group.status === 'generating' ? 'pending' : group.status || 'pending' });
+  }
+
+  for (const image of images) {
+    if (groupedIds.has(image.id)) continue;
+    groups.push({
+      id: nextGroupId(groups),
+      images: [image.id],
+      instruction: '',
+      markdown: '',
+      status: 'pending',
+      outputFile: '',
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  return groups;
+}
+
+function readStoredGroups() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(GROUPS_STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredGroups(groups) {
+  window.localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(groups));
+}
+
+function buildExportMarkdown(groups) {
+  const sections = groups
+    .filter((group) => group.markdown?.trim())
+    .map((group) => group.markdown.trim());
+  if (sections.length === 0) return '';
+  return [`# ${EXPORT_TITLE}`, '', ...sections].join('\n\n') + '\n';
+}
+
+function downloadFile(file) {
+  const url = URL.createObjectURL(file);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = file.name;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function readError(response) {
   try {
     const data = await response.json();
@@ -478,25 +674,57 @@ async function readError(response) {
   }
 }
 
-function fileToBase64(file) {
+async function prepareImageForUpload(file) {
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  try {
+    const scale = Math.min(1, MAX_UPLOAD_WIDTH / bitmap.width);
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error(`Could not resize ${file.name}.`);
+    context.drawImage(bitmap, 0, 0, width, height);
+    const blob = await canvasToBlob(canvas, 'image/jpeg', 0.82);
+    return new File([blob], jpegName(file.name), { type: 'image/jpeg' });
+  } finally {
+    bitmap.close();
+  }
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Could not compress image.'));
+    }, type, quality);
+  });
+}
+
+function jpegName(filename) {
+  const base = filename.replace(/\.[^.]+$/, '') || 'image';
+  return `${base}.jpg`;
+}
+
+function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result;
       if (typeof result !== 'string') {
-        reject(new Error(`Could not read ${file.name}.`));
+        reject(new Error('Could not read image.'));
         return;
       }
-      const base64 = result.split(',')[1];
-      if (!base64) {
-        reject(new Error(`Could not read ${file.name}.`));
-        return;
-      }
-      resolve(base64);
+      resolve(result.split(',')[1] || '');
     };
-    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
-    reader.readAsDataURL(file);
+    reader.onerror = () => reject(new Error('Could not read image.'));
+    reader.readAsDataURL(blob);
   });
+}
+
+function isBlobUploadUnavailable(error) {
+  return /BLOB_READ_WRITE_TOKEN|501|not configured/i.test(error.message || '');
 }
 
 createRoot(document.getElementById('root')).render(<App />);

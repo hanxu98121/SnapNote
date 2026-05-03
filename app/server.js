@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import OpenAI from 'openai';
 import sharp from 'sharp';
+import { del } from '@vercel/blob';
+import { handleUpload } from '@vercel/blob/client';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -20,7 +22,18 @@ const app = express();
 app.use(express.json({ limit: '80mb' }));
 app.use('/images', express.static(inputImageDir));
 
-const fallbackSystemPrompt = '你是一位专业的个人知识库管理专家。请将截图整理为适合 Obsidian 的 Markdown，标题从 ## 开始，去除 UI 噪音，只输出 Markdown。';
+const fallbackSystemPrompt = `你是一位专业的个人知识库管理专家，擅长将截图、文本和用户说明整理成适合 Obsidian 管理的 Markdown 笔记。
+
+要求：
+1. 输出必须是 Markdown。
+2. 标题从二级标题 ## 或三级标题 ### 开始，禁止使用一级标题 #。
+3. 禁止使用 Emoji 和装饰性图标。
+4. 去除广告、平台按钮、水印、点赞、评论、分享、加载更多等无关 UI 文案。
+5. 保留高价值信息，例如名称、作者、价格、地点、时间、步骤、参数、核心观点。
+6. 如果存在多项属性、对比信息或结构化数据，优先使用 Markdown 表格。
+7. 不要过度扩写。如果截图信息很少，只做简洁整理。
+8. 文末添加“使用建议”，包括推荐文件名、建议内部链接和标签。
+9. 只输出最终 Markdown，不解释处理过程。`;
 
 async function ensureDirs() {
   await Promise.all([
@@ -64,8 +77,10 @@ async function listImages() {
   return entries
     .filter((entry) => entry.isFile() && imageExts.has(path.extname(entry.name).toLowerCase()))
     .map((entry) => ({
+      id: entry.name,
       name: entry.name,
-      url: `/images/${encodeURIComponent(entry.name)}`
+      url: `/images/${encodeURIComponent(entry.name)}`,
+      source: 'local'
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -123,7 +138,8 @@ async function storeImportedImage(file) {
   if (!shouldTranscode) {
     const outputPath = await uniqueImagePath(sourceName);
     await fs.writeFile(outputPath, inputBuffer);
-    return path.basename(outputPath);
+    const name = path.basename(outputPath);
+    return { id: name, name, url: `/images/${encodeURIComponent(name)}`, source: 'local' };
   }
 
   const outputName = normalizeImportedName(sourceName.replace(/\.[^.]+$/, ''), '.jpg');
@@ -133,7 +149,8 @@ async function storeImportedImage(file) {
     .jpeg({ quality: 82, mozjpeg: true })
     .toBuffer();
   await fs.writeFile(outputPath, jpegBuffer);
-  return path.basename(outputPath);
+  const name = path.basename(outputPath);
+  return { id: name, name, url: `/images/${encodeURIComponent(name)}`, source: 'local' };
 }
 
 function mergeStateWithImages(state, images) {
@@ -317,6 +334,25 @@ app.put('/api/state', async (req, res, next) => {
 
 app.post('/api/import-images', async (req, res, next) => {
   try {
+    if (req.body?.type) {
+      if (!process.env.BLOB_READ_WRITE_TOKEN) {
+        return res.status(501).json({ error: 'BLOB_READ_WRITE_TOKEN is not configured for client uploads.' });
+      }
+      const result = await handleUpload({
+        request: req,
+        body: req.body,
+        onBeforeGenerateToken: async (pathname) => ({
+          allowedContentTypes: ['image/jpeg'],
+          maximumSizeInBytes: 50 * 1024 * 1024,
+          addRandomSuffix: false,
+          allowOverwrite: false,
+          tokenPayload: pathname
+        }),
+        onUploadCompleted: async () => {}
+      });
+      return res.json(result);
+    }
+
     await ensureDirs();
     const files = Array.isArray(req.body?.files) ? req.body.files : [];
     if (files.length === 0) return res.status(400).json({ error: 'No files were provided.' });
@@ -327,6 +363,27 @@ app.post('/api/import-images', async (req, res, next) => {
     }
 
     res.json({ imported });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/delete-image', async (req, res, next) => {
+  try {
+    const image = req.body?.image || {};
+    if (image.pathname || (typeof image.id === 'string' && image.id.startsWith('blob:'))) {
+      if (!process.env.BLOB_READ_WRITE_TOKEN) {
+        return res.status(501).json({ error: 'BLOB_READ_WRITE_TOKEN is not configured for Blob deletion.' });
+      }
+      const pathname = image.pathname || image.id.slice(5);
+      await del(pathname);
+      return res.json({ deleted: pathname });
+    }
+
+    const filename = image.name || image.id;
+    if (!filename) return res.status(400).json({ error: 'Missing image name.' });
+    await fs.unlink(safeImagePath(filename));
+    res.json({ deleted: filename });
   } catch (error) {
     next(error);
   }

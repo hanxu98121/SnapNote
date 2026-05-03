@@ -445,24 +445,23 @@ function App() {
 
       <section className="top-actions-panel">
         <div className="selection-head">
-          <div>
-            <p className="eyebrow">Picture selection</p>
-            <h2>Bulk delete after generation</h2>
+          <div className="selection-title">
+            <h2>Select pictures</h2>
           </div>
           <div className="selection-summary">
             {images.length === 0 ? 'No pictures loaded yet.' : `${selectedImageCount}/${images.length} selected`}
           </div>
-        </div>
-        <div className="actions selection-actions">
-          <button onClick={toggleSelectAllImages} disabled={images.length === 0}>
-            {allImagesSelected ? 'Clear all' : 'Select all'}
-          </button>
-          <button onClick={clearSelectedImages} disabled={selectedImageCount === 0}>
-            Clear selection
-          </button>
-          <button onClick={handleBulkDeleteSelected} disabled={selectedImageCount === 0}>
-            Delete selected{selectedImageCount > 0 ? ` (${selectedImageCount})` : ''}
-          </button>
+          <div className="selection-actions">
+            <button onClick={toggleSelectAllImages} disabled={images.length === 0}>
+              {allImagesSelected ? 'Clear all' : 'Select all'}
+            </button>
+            <button onClick={clearSelectedImages} disabled={selectedImageCount === 0}>
+              Clear selection
+            </button>
+            <button onClick={handleBulkDeleteSelected} disabled={selectedImageCount === 0}>
+              Delete selected{selectedImageCount > 0 ? ` (${selectedImageCount})` : ''}
+            </button>
+          </div>
         </div>
       </section>
 

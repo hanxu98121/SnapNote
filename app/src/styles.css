@@ -78,10 +78,15 @@ button.primary {
 }
 
 .selection-head {
-  align-items: end;
+  align-items: center;
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 12px 16px;
   justify-content: space-between;
+}
+
+.selection-title {
+  min-width: 200px;
 }
 
 .selection-head h2 {
@@ -93,6 +98,12 @@ button.primary {
 .selection-summary {
   color: #4a566d;
   font-size: 14px;
+  white-space: nowrap;
+}
+
+.selection-actions {
+  justify-content: flex-end;
+  margin-left: auto;
 }
 
 .eyebrow {
@@ -458,7 +469,22 @@ textarea:focus {
 
   .selection-head {
     align-items: flex-start;
-    flex-direction: column;
+  }
+
+  .selection-title,
+  .selection-summary,
+  .selection-actions {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .selection-summary {
+    white-space: normal;
+  }
+
+  .selection-actions {
+    justify-content: flex-start;
+    margin-left: 0;
   }
 
   .group-row {

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { upload } from '@vercel/blob/client';
-import logoUrl from '../../logo.png';
+import logoUrl from './assets/snapnote-logo.png';
 import './styles.css';
 
 const GROUPS_STORAGE_KEY = 'snapnote.groups.v1';
@@ -443,10 +443,7 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <span className="mark" aria-hidden="true">
-            <img src={logoUrl} alt="" />
-          </span>
-          <strong>SnapNote</strong>
+          <img className="brand-logo" src={logoUrl} alt="SnapNote" />
         </div>
 
         <nav className="nav" aria-label="Workspace navigation">

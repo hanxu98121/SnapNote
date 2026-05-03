@@ -434,24 +434,76 @@ function App() {
     ]);
   }
 
+  const generatedCount = groups.filter((group) => group.markdown?.trim()).length;
+  const savedCount = groups.filter((group) => group.status === 'saved').length;
+  const queuedCount = groups.filter((group) => group.images.length > 0 && group.status !== 'saved').length;
+
   return (
-    <main className="app-shell">
+    <div className="app-shell">
       <header className="topbar">
-        <div className="topbar-copy">
-          <p className="eyebrow">Local multimodal workflow</p>
-          <h1>Screenshot To Obsidian</h1>
+        <div className="brand">
+          <span className="mark">SN</span>
+          <strong>SnapNote</strong>
+        </div>
+
+        <nav className="nav" aria-label="Workspace navigation">
+          <a href="#workspace">Workspace</a>
+          <a href="#system-prompt">Prompt</a>
+          <a href="#provider">Provider</a>
+        </nav>
+
+        <input
+          ref={bulkLoadInputRef}
+          className="bulk-load-input"
+          type="file"
+          accept="image/*,.dng,.cr2,.cr3,.nef,.arw,.orf,.rw2,.raf,.pef,.srw,.x3f,.iiq,.kdc,.rwl,.3fr,.heic,.heif,.bmp,.gif,.tif,.tiff,.avif"
+          multiple
+          onChange={handleBulkLoadChange}
+        />
+        <div className="toolbar-actions">
+          <button onClick={openBulkLoadPicker} disabled={bulkLoading}>
+            {bulkLoading ? 'Loading...' : 'Bulk load'}
+          </button>
+          <button onClick={refreshState}>Refresh input_image</button>
+          <button className="primary" onClick={generateAll} disabled={generatingAll || groups.every((group) => group.images.length === 0)}>
+            {generatingAll ? 'Generating all...' : 'Generate all'}
+          </button>
         </div>
       </header>
 
-      <section className="top-actions-panel">
-        <div className="selection-head">
-          <div className="selection-title">
-            <h2>Select pictures</h2>
+      <main className="page">
+        <section className="masthead">
+          <div className="title-group">
+            <p className="kicker">Local multimodal workflow</p>
+            <h1>Screenshot groups to Obsidian Markdown.</h1>
           </div>
-          <div className="selection-summary">
-            {images.length === 0 ? 'No pictures loaded yet.' : `${selectedImageCount}/${images.length} selected`}
+
+          <div className="summary" aria-label="Workspace summary">
+            <div className="metric">
+              <span>Groups</span>
+              <strong>{String(groups.length).padStart(2, '0')}</strong>
+            </div>
+            <div className="metric">
+              <span>Images</span>
+              <strong>{String(images.length).padStart(2, '0')}</strong>
+            </div>
+            <div className="metric">
+              <span>Queued</span>
+              <strong>{String(queuedCount).padStart(2, '0')}</strong>
+            </div>
+            <div className="metric">
+              <span>Saved</span>
+              <strong>{String(savedCount).padStart(2, '0')}</strong>
+            </div>
           </div>
-          <div className="selection-actions">
+        </section>
+
+        <section className="selection-bar" aria-label="Picture selection controls">
+          <div className="selection-copy">
+            <strong>Select pictures</strong>
+            <span>{images.length === 0 ? 'No pictures loaded yet.' : `${selectedImageCount}/${images.length} selected`}</span>
+          </div>
+          <div className="toolbar-actions wrap">
             <button onClick={toggleSelectAllImages} disabled={images.length === 0}>
               {allImagesSelected ? 'Clear all' : 'Select all'}
             </button>
@@ -461,69 +513,74 @@ function App() {
             <button onClick={handleBulkDeleteSelected} disabled={selectedImageCount === 0}>
               Delete selected{selectedImageCount > 0 ? ` (${selectedImageCount})` : ''}
             </button>
+            <button onClick={exportAllMarkdown} disabled={generatedCount === 0}>
+              Export Markdown
+            </button>
+            <button onClick={createEmptyGroup}>New empty group</button>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="actions topbar-actions">
-        <input
-          ref={bulkLoadInputRef}
-          className="bulk-load-input"
-          type="file"
-          accept="image/*,.dng,.cr2,.cr3,.nef,.arw,.orf,.rw2,.raf,.pef,.srw,.x3f,.iiq,.kdc,.rwl,.3fr,.heic,.heif,.bmp,.gif,.tif,.tiff,.avif"
-          multiple
-          onChange={handleBulkLoadChange}
-        />
-        <button onClick={openBulkLoadPicker} disabled={bulkLoading}>
-          {bulkLoading ? 'Loading...' : 'Bulk load'}
-        </button>
-        <button onClick={refreshState}>Refresh input_image</button>
-        <button className="primary" onClick={generateAll} disabled={generatingAll || groups.every((group) => group.images.length === 0)}>
-          {generatingAll ? 'Generating all...' : 'Generate all'}
-        </button>
-        <button onClick={exportAllMarkdown} disabled={!groups.some((group) => group.markdown?.trim())}>
-          Export Markdown
-        </button>
-        <button onClick={createEmptyGroup}>New empty group</button>
-      </section>
+        <ProviderPanel config={providerConfig} onChange={setProviderConfig} />
+        <SystemPromptPanel prompt={systemPrompt} saved={promptSaved} onChange={setSystemPrompt} onSave={saveSystemPrompt} />
 
-      <section className="notice">
-        Put screenshots in <code>input_image/</code> locally or use Bulk load to import pictures. On Vercel, imports sync to private Blob storage and group layout is kept in this browser.
-      </section>
+        <section className="pipeline" aria-label="Generation pipeline">
+          <div className="stage">
+            <span className="stage-dot" />
+            <strong>Group</strong>
+            <span>input_image/</span>
+          </div>
+          <div className="stage">
+            <span className="stage-dot" />
+            <strong>Generate</strong>
+            <span>sequential</span>
+          </div>
+          <div className="stage">
+            <span className="stage-dot" />
+            <strong>Save</strong>
+            <span>output/</span>
+          </div>
+        </section>
 
-      <ProviderPanel config={providerConfig} onChange={setProviderConfig} />
-      <SystemPromptPanel prompt={systemPrompt} saved={promptSaved} onChange={setSystemPrompt} onSave={saveSystemPrompt} />
+        {error && <section className="error">{error}</section>}
+        {bulkLoadStatus ? <section className="notice">{bulkLoadStatus}</section> : null}
+        {loading ? <section className="empty">Loading images and state...</section> : null}
+        {!loading && groups.length === 0 ? <section className="empty">No screenshots found in input_image/.</section> : null}
 
-      {error && <section className="error">{error}</section>}
-      {bulkLoadStatus ? <section className="notice">{bulkLoadStatus}</section> : null}
-      {loading ? <section className="empty">Loading images and state...</section> : null}
-      {!loading && groups.length === 0 ? <section className="empty">No screenshots found in input_image/.</section> : null}
+        <section id="workspace" className="workspace" aria-label="Screenshot groups">
+          <div className="workspace-head" aria-hidden="true">
+            <div className="head-cell">Group</div>
+            <div className="head-cell">Images</div>
+            <div className="head-cell">Instruction</div>
+            <div className="head-cell">Markdown output</div>
+          </div>
 
-      <section className="groups">
-        {groups.map((group) => (
-          <GroupRow
-            key={group.id}
-            group={group}
-            imageMap={imageMap}
-            selectedImageIds={selectedImageIds}
-            onInstructionChange={(instruction) => updateGroup(group.id, { instruction })}
-            onPersist={() => persistGroups(groupsRef.current)}
-            onMarkdownChange={(markdown) => updateGroup(group.id, { markdown, status: group.status === 'saved' ? 'generated' : group.status })}
-            onGenerate={() => generateGroup(group.id)}
-            onSave={() => saveGroup(group.id)}
-            onCopy={() => copyMarkdown(group.id)}
-            onDropImage={moveImageToGroup}
-            onSplitImage={splitImage}
-            onDeleteImage={deleteImage}
-            onToggleImageSelection={(imageId) =>
-              setSelectedImageIds((selected) =>
-                selected.includes(imageId) ? selected.filter((id) => id !== imageId) : [...selected, imageId]
-              )
-            }
-          />
-        ))}
-      </section>
-    </main>
+          <div className="groups">
+            {groups.map((group) => (
+              <GroupRow
+                key={group.id}
+                group={group}
+                imageMap={imageMap}
+                selectedImageIds={selectedImageIds}
+                onInstructionChange={(instruction) => updateGroup(group.id, { instruction })}
+                onPersist={() => persistGroups(groupsRef.current)}
+                onMarkdownChange={(markdown) => updateGroup(group.id, { markdown, status: group.status === 'saved' ? 'generated' : group.status })}
+                onGenerate={() => generateGroup(group.id)}
+                onSave={() => saveGroup(group.id)}
+                onCopy={() => copyMarkdown(group.id)}
+                onDropImage={moveImageToGroup}
+                onSplitImage={splitImage}
+                onDeleteImage={deleteImage}
+                onToggleImageSelection={(imageId) =>
+                  setSelectedImageIds((selected) =>
+                    selected.includes(imageId) ? selected.filter((id) => id !== imageId) : [...selected, imageId]
+                  )
+                }
+              />
+            ))}
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }
 
@@ -531,26 +588,26 @@ function SystemPromptPanel({ prompt, saved, onChange, onSave }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <section className="system-prompt-panel">
-      <div className="system-prompt-head">
-        <div>
-          <p className="eyebrow">Backend JSON prompt</p>
-          <h2>System prompt</h2>
-        </div>
-        <div className="actions">
-          <button onClick={() => setOpen((value) => !value)}>{open ? 'Hide prompt' : 'Show prompt'}</button>
-          <button onClick={onSave}>Save prompt</button>
-        </div>
+    <section id="system-prompt" className="system-row">
+      <div className="system-label">
+        <strong>System prompt</strong>
+        <span>app/system-prompt.json</span>
       </div>
-      {open ? (
-        <textarea
-          className="system-prompt-textarea"
-          value={prompt}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="System prompt JSON is stored at app/system-prompt.json"
-        />
-      ) : null}
-      {saved ? <p className="saved-path">System prompt saved to <code>app/system-prompt.json</code>.</p> : null}
+      <div className="system-prompt">
+        <div className="toolbar-actions">
+          <button onClick={() => setOpen((value) => !value)}>{open ? 'Hide prompt' : 'Show prompt'}</button>
+          <button className="primary" onClick={onSave}>Save prompt</button>
+        </div>
+        {open ? (
+          <textarea
+            className="system-prompt-textarea"
+            value={prompt}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="System prompt JSON is stored at app/system-prompt.json"
+          />
+        ) : null}
+        {saved ? <p className="saved-path">System prompt saved to <code>app/system-prompt.json</code>.</p> : null}
+      </div>
     </section>
   );
 }
@@ -561,50 +618,48 @@ function ProviderPanel({ config, onChange }) {
   }
 
   return (
-    <section className="provider-panel">
-      <div>
-        <p className="eyebrow">Model provider</p>
-        <h2>Doubao Ark</h2>
+    <section id="provider" className="control-strip" aria-label="Provider controls">
+      <div className="field-grid">
+        <label>
+          API key
+          <input
+            type="password"
+            placeholder="ARK_API_KEY"
+            value={config.apiKey}
+            onChange={(event) => update({ apiKey: event.target.value })}
+            autoComplete="off"
+          />
+        </label>
+        <label>
+          Base URL
+          <input
+            value={config.baseURL}
+            onChange={(event) => update({ baseURL: event.target.value })}
+            autoComplete="off"
+          />
+        </label>
+        <label>
+          Endpoint ID / model
+          <input
+            placeholder="ep-..."
+            value={config.model}
+            onChange={(event) => update({ model: event.target.value })}
+            autoComplete="off"
+          />
+        </label>
+        <label>
+          Concurrency
+          <input
+            type="number"
+            min="1"
+            max="10"
+            step="1"
+            value={config.concurrency}
+            onChange={(event) => update({ concurrency: normalizeConcurrency(event.target.value) })}
+            autoComplete="off"
+          />
+        </label>
       </div>
-      <label>
-        API key
-        <input
-          type="password"
-          placeholder="ARK_API_KEY"
-          value={config.apiKey}
-          onChange={(event) => update({ apiKey: event.target.value })}
-          autoComplete="off"
-        />
-      </label>
-      <label>
-        Endpoint ID / model
-        <input
-          placeholder="ep-..."
-          value={config.model}
-          onChange={(event) => update({ model: event.target.value })}
-          autoComplete="off"
-        />
-      </label>
-      <label>
-        Concurrency
-        <input
-          type="number"
-          min="1"
-          max="10"
-          step="1"
-          value={config.concurrency}
-          onChange={(event) => update({ concurrency: normalizeConcurrency(event.target.value) })}
-          autoComplete="off"
-        />
-      </label>
-      <label>
-        Base URL
-        <input
-          value={config.baseURL}
-          onChange={(event) => update({ baseURL: event.target.value })}
-          autoComplete="off"
-        />
-      </label>
     </section>
   );
 }
@@ -650,11 +705,15 @@ function GroupRow({
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
     >
-      <section className="image-column">
-        <div className="column-head">
+      <section className="cell group-meta">
+        <div className="group-id">
           <strong>{group.id}</strong>
           <StatusBadge status={group.status} />
         </div>
+        <div className="group-path">{group.outputFile || `${group.images.length} image${group.images.length === 1 ? '' : 's'}`}</div>
+      </section>
+
+      <section className="cell image-column">
         <div className="image-stack">
           {group.images.length === 0 ? <div className="drop-placeholder">Drop images here</div> : null}
           {group.images.map((imageId) => {
@@ -662,7 +721,7 @@ function GroupRow({
             const selected = selectedImageIds.includes(imageId);
             return (
               <figure
-                className={`image-card ${selected ? 'selected' : ''}`}
+                className={`thumb image-card ${selected ? 'selected' : ''}`}
                 draggable
                 onDragStart={(event) => handleDragStart(event, imageId)}
                 key={imageId}
@@ -681,9 +740,9 @@ function GroupRow({
                   <span className="image-select-box">{selected ? '✓' : ''}</span>
                 </button>
                 {image ? <img src={image.url} alt={image.name} /> : <div className="missing-image">Missing image</div>}
-                <figcaption title={image?.name || imageId}>
-                  {image?.name || imageId}
-                  {image?.source ? <span className="image-source">{image.source}</span> : null}
+                <figcaption className="thumb-title" title={image?.name || imageId}>
+                  <strong>{image?.name || imageId}</strong>
+                  <span>{image?.source || 'local'}</span>
                 </figcaption>
                 <div className="image-actions">
                   {group.images.length > 1 ? <button onClick={() => onSplitImage(group.id, imageId)}>Split</button> : null}
@@ -695,7 +754,7 @@ function GroupRow({
         </div>
       </section>
 
-      <section className="instruction-column">
+      <section className="cell instruction-column">
         <label htmlFor={`${group.id}-instruction`}>Instruction for this group</label>
         <textarea
           id={`${group.id}-instruction`}
@@ -712,7 +771,7 @@ function GroupRow({
         {group.error ? <p className="inline-error">{group.error}</p> : null}
       </section>
 
-      <section className="output-column">
+      <section className="cell output-column">
         <label htmlFor={`${group.id}-markdown`}>Markdown output</label>
         <textarea
           id={`${group.id}-markdown`}

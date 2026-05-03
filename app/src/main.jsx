@@ -332,12 +332,17 @@ function App() {
       const deletedIds = new Set(uniqueIds);
       const nextImages = images.filter((item) => !deletedIds.has(item.id));
       const nextGroups = groupsRef.current
-        .map((group) => ({
-          ...group,
-          images: group.images.filter((id) => !deletedIds.has(id)),
-          updatedAt: new Date().toISOString()
-        }))
-        .filter((group) => group.images.length > 0 || group.instruction?.trim() || group.markdown?.trim());
+        .map((group) => {
+          const hadImages = group.images.length > 0;
+          const nextGroup = {
+            ...group,
+            images: group.images.filter((id) => !deletedIds.has(id)),
+            updatedAt: new Date().toISOString()
+          };
+          return { ...nextGroup, hadImages };
+        })
+        .filter((group) => group.images.length > 0 || !group.hadImages)
+        .map(({ hadImages, ...group }) => group);
 
       setImages(nextImages);
       setSelectedImageIds((selected) => selected.filter((imageId) => !deletedIds.has(imageId)));

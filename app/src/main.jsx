@@ -72,6 +72,9 @@ function App() {
     writeStoredProviderConfig(providerConfig);
   }, [providerConfig]);
 
+  const selectedImageCount = selectedImageIds.length;
+  const allImagesSelected = images.length > 0 && selectedImageCount === images.length;
+
   async function refreshState() {
     setLoading(true);
     setError('');
@@ -178,17 +181,26 @@ function App() {
     setGroups(nextGroups);
   }
 
-  async function generateGroup(groupId) {
+  async function generateGroup(groupId, options = {}) {
+    const { markGenerating = true } = options;
     setError('');
     if (!providerConfig.apiKey.trim() || !providerConfig.model.trim()) {
       setError('Enter Doubao/Ark API key and endpoint ID before generating.');
       return;
     }
-    const nextGroups = groupsRef.current.map((group) =>
-      group.id === groupId ? { ...group, status: 'generating', error: '', updatedAt: new Date().toISOString() } : group
-    );
+    if (markGenerating) {
+      const nextGroups = groupsRef.current.map((group) =>
+        group.id === groupId ? { ...group, status: 'generating', error: '', updatedAt: new Date().toISOString() } : group
+      );
+      try {
+        await persistGroups(nextGroups);
+      } catch (err) {
+        setError(err.message);
+        return;
+      }
+    }
+
     try {
-      await persistGroups(nextGroups);
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 310_000);
       const response = await fetch(`/api/generate/${encodeURIComponent(groupId)}`, {
@@ -201,6 +213,7 @@ function App() {
             .find((group) => group.id === groupId)
             ?.images.map((id) => imageMap.get(id))
             .filter(Boolean),
+          previousMarkdown: groupsRef.current.find((group) => group.id === groupId)?.markdown || '',
           systemPrompt
         }),
         signal: controller.signal
@@ -224,15 +237,51 @@ function App() {
   }
 
   async function generateAll() {
+    const targetGroupIds = groupsRef.current.filter((group) => group.images.length > 0).map((group) => group.id);
+    if (targetGroupIds.length === 0) return;
+
     setGeneratingAll(true);
     try {
-      for (const group of groupsRef.current) {
-        if (group.images.length === 0) continue;
-        await generateGroup(group.id);
-      }
+      const nextGroups = groupsRef.current.map((group) =>
+        targetGroupIds.includes(group.id)
+          ? { ...group, status: 'generating', error: '', updatedAt: new Date().toISOString() }
+          : group
+      );
+      await persistGroups(nextGroups);
+
+      const concurrency = normalizeConcurrency(providerConfig.concurrency);
+      const pendingGroupIds = [...targetGroupIds];
+      const workerCount = Math.min(concurrency, pendingGroupIds.length);
+      const workers = Array.from({ length: workerCount }, async () => {
+        while (pendingGroupIds.length > 0) {
+          const nextGroupId = pendingGroupIds.shift();
+          if (!nextGroupId) return;
+          await generateGroup(nextGroupId, { markGenerating: false });
+        }
+      });
+
+      await Promise.all(workers);
+    } catch (err) {
+      setError(err.message);
     } finally {
       setGeneratingAll(false);
     }
+  }
+
+  function selectAllImages() {
+    setSelectedImageIds(images.map((image) => image.id));
+  }
+
+  function clearSelectedImages() {
+    setSelectedImageIds([]);
+  }
+
+  function toggleSelectAllImages() {
+    if (allImagesSelected) {
+      clearSelectedImages();
+      return;
+    }
+    selectAllImages();
   }
 
   async function saveGroup(groupId) {
@@ -380,35 +429,56 @@ function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
+        <div className="topbar-copy">
           <p className="eyebrow">Local multimodal workflow</p>
           <h1>Screenshot To Obsidian</h1>
         </div>
-        <div className="actions">
-          <input
-            ref={bulkLoadInputRef}
-            className="bulk-load-input"
-            type="file"
-            accept="image/*,.heic,.heif,.bmp,.gif,.tif,.tiff,.avif"
-            multiple
-            onChange={handleBulkLoadChange}
-          />
-          <button onClick={openBulkLoadPicker} disabled={bulkLoading}>
-            {bulkLoading ? 'Loading...' : 'Bulk load'}
-          </button>
-          <button onClick={refreshState}>Refresh input_image</button>
-          <button className="primary" onClick={generateAll} disabled={generatingAll || groups.every((group) => group.images.length === 0)}>
-            {generatingAll ? 'Generating all...' : 'Generate all'}
-          </button>
-          <button onClick={handleBulkDeleteSelected} disabled={selectedImageIds.length === 0}>
-            Delete selected{selectedImageIds.length > 0 ? ` (${selectedImageIds.length})` : ''}
-          </button>
-          <button onClick={exportAllMarkdown} disabled={!groups.some((group) => group.markdown?.trim())}>
-            Export Markdown
-          </button>
-          <button onClick={createEmptyGroup}>New empty group</button>
-        </div>
       </header>
+
+      <section className="top-actions-panel">
+        <div className="selection-head">
+          <div>
+            <p className="eyebrow">Picture selection</p>
+            <h2>Bulk delete after generation</h2>
+          </div>
+          <div className="selection-summary">
+            {images.length === 0 ? 'No pictures loaded yet.' : `${selectedImageCount}/${images.length} selected`}
+          </div>
+        </div>
+        <div className="actions selection-actions">
+          <button onClick={toggleSelectAllImages} disabled={images.length === 0}>
+            {allImagesSelected ? 'Clear all' : 'Select all'}
+          </button>
+          <button onClick={clearSelectedImages} disabled={selectedImageCount === 0}>
+            Clear selection
+          </button>
+          <button onClick={handleBulkDeleteSelected} disabled={selectedImageCount === 0}>
+            Delete selected{selectedImageCount > 0 ? ` (${selectedImageCount})` : ''}
+          </button>
+        </div>
+      </section>
+
+      <section className="actions topbar-actions">
+        <input
+          ref={bulkLoadInputRef}
+          className="bulk-load-input"
+          type="file"
+          accept="image/*,.heic,.heif,.bmp,.gif,.tif,.tiff,.avif"
+          multiple
+          onChange={handleBulkLoadChange}
+        />
+        <button onClick={openBulkLoadPicker} disabled={bulkLoading}>
+          {bulkLoading ? 'Loading...' : 'Bulk load'}
+        </button>
+        <button onClick={refreshState}>Refresh input_image</button>
+        <button className="primary" onClick={generateAll} disabled={generatingAll || groups.every((group) => group.images.length === 0)}>
+          {generatingAll ? 'Generating all...' : 'Generate all'}
+        </button>
+        <button onClick={exportAllMarkdown} disabled={!groups.some((group) => group.markdown?.trim())}>
+          Export Markdown
+        </button>
+        <button onClick={createEmptyGroup}>New empty group</button>
+      </section>
 
       <section className="notice">
         Put screenshots in <code>input_image/</code> locally or use Bulk load to import pictures. On Vercel, imports sync to private Blob storage and group layout is kept in this browser.
@@ -505,6 +575,18 @@ function ProviderPanel({ config, onChange }) {
           placeholder="ep-..."
           value={config.model}
           onChange={(event) => update({ model: event.target.value })}
+          autoComplete="off"
+        />
+      </label>
+      <label>
+        Concurrency
+        <input
+          type="number"
+          min="1"
+          max="10"
+          step="1"
+          value={config.concurrency}
+          onChange={(event) => update({ concurrency: normalizeConcurrency(event.target.value) })}
           autoComplete="off"
         />
       </label>
@@ -716,6 +798,7 @@ function readStoredProviderConfig() {
     provider: 'doubao',
     apiKey: '',
     model: '',
+    concurrency: 1,
     baseURL: 'https://ark.cn-beijing.volces.com/api/v3'
   };
 
@@ -728,6 +811,7 @@ function readStoredProviderConfig() {
       provider: typeof parsed.provider === 'string' && parsed.provider.trim() ? parsed.provider : fallback.provider,
       apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : fallback.apiKey,
       model: typeof parsed.model === 'string' ? parsed.model : fallback.model,
+      concurrency: normalizeConcurrency(parsed.concurrency),
       baseURL: typeof parsed.baseURL === 'string' && parsed.baseURL.trim() ? parsed.baseURL : fallback.baseURL
     };
   } catch {
@@ -737,6 +821,12 @@ function readStoredProviderConfig() {
 
 function writeStoredProviderConfig(config) {
   window.localStorage.setItem(PROVIDER_STORAGE_KEY, JSON.stringify(config));
+}
+
+function normalizeConcurrency(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) return 1;
+  return Math.min(10, Math.max(1, parsed));
 }
 
 function buildExportMarkdown(groups) {

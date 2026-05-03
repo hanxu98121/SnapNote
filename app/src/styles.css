@@ -50,10 +50,49 @@ button.primary {
 
 .topbar {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
+  flex-direction: column;
+  gap: 14px;
   margin-bottom: 18px;
+}
+
+.topbar-copy h1 {
+  margin-bottom: 2px;
+}
+
+.topbar-actions,
+.selection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.top-actions-panel {
+  align-items: end;
+  background: #ffffff;
+  border: 1px solid #dce3ed;
+  border-radius: 18px;
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 16px;
+}
+
+.selection-head {
+  align-items: end;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.selection-head h2 {
+  font-size: 24px;
+  line-height: 1;
+  margin: 0;
+}
+
+.selection-summary {
+  color: #4a566d;
+  font-size: 14px;
 }
 
 .eyebrow {
@@ -97,7 +136,7 @@ h1 {
   color: #ffffff;
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 1fr) minmax(220px, 1fr) minmax(260px, 1.2fr);
+  grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 1fr) minmax(220px, 1fr) minmax(130px, 0.5fr) minmax(260px, 1.2fr);
   margin-bottom: 18px;
   padding: 16px;
 }
@@ -142,6 +181,17 @@ h1 {
 .provider-panel label {
   color: #d9e1ee;
   margin: 0;
+}
+
+.provider-panel input {
+  background: #101928;
+  border-color: #556177;
+  color: #ffffff;
+}
+
+.provider-panel input:focus {
+  border-color: #88a0ff;
+  box-shadow: 0 0 0 4px rgba(136, 160, 255, 0.16);
 }
 
 input {
@@ -403,6 +453,10 @@ textarea:focus {
   }
 
   .topbar {
+    gap: 12px;
+  }
+
+  .selection-head {
     align-items: flex-start;
     flex-direction: column;
   }

@@ -7,6 +7,23 @@ const GROUPS_STORAGE_KEY = 'snapnote.groups.v1';
 const PROVIDER_STORAGE_KEY = 'snapnote.provider.v1';
 const MAX_UPLOAD_WIDTH = 1800;
 const EXPORT_TITLE = 'SnapNote Output';
+const RAW_IMAGE_EXTENSIONS = new Set([
+  '.dng',
+  '.cr2',
+  '.cr3',
+  '.nef',
+  '.arw',
+  '.orf',
+  '.rw2',
+  '.raf',
+  '.pef',
+  '.srw',
+  '.x3f',
+  '.iiq',
+  '.kdc',
+  '.rwl',
+  '.3fr'
+]);
 
 function App() {
   const [images, setImages] = useState([]);
@@ -107,17 +124,15 @@ function App() {
     if (files.length === 0) return;
 
     setError('');
+    if (files.some(isRawImageFile)) {
+      setError('RAW/DNG is not supported in browser upload. Please transcode to JPEG or PNG before uploading.');
+      setBulkLoadStatus('RAW/DNG detected. Please transcode to JPEG or PNG before uploading.');
+      return;
+    }
+
     setBulkLoading(true);
     setBulkLoadStatus(`Preparing ${files.length} image(s)...`);
     try {
-      if (files.some(isRawImageFile)) {
-        setBulkLoadStatus('Detected DNG/raw image(s). Importing locally so the server can transcode them...');
-        await uploadImagesLocally(files);
-        setBulkLoadStatus(`Imported ${files.length} image(s) locally.`);
-        await refreshState();
-        return;
-      }
-
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index];
         setBulkLoadStatus(`Resizing ${file.name} (${index + 1}/${files.length})...`);
@@ -147,26 +162,6 @@ function App() {
     } finally {
       setBulkLoading(false);
     }
-  }
-
-  async function uploadImagesLocally(files) {
-    const payload = await Promise.all(
-      files.map(async (file) => {
-        const uploadFile = isRawImageFile(file) ? file : await prepareImageForUpload(file);
-        return {
-          name: uploadFile.name,
-          type: uploadFile.type,
-          data: await blobToBase64(uploadFile)
-        };
-      })
-    );
-
-    const response = await fetch('/api/import-images', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: payload })
-    });
-    if (!response.ok) throw new Error(await readError(response));
   }
 
   async function persistGroups(nextGroups) {
@@ -476,7 +471,7 @@ function App() {
           ref={bulkLoadInputRef}
           className="bulk-load-input"
           type="file"
-          accept="image/*,.dng,.heic,.heif,.bmp,.gif,.tif,.tiff,.avif"
+          accept="image/*,.dng,.cr2,.cr3,.nef,.arw,.orf,.rw2,.raf,.pef,.srw,.x3f,.iiq,.kdc,.rwl,.3fr,.heic,.heif,.bmp,.gif,.tif,.tiff,.avif"
           multiple
           onChange={handleBulkLoadChange}
         />
@@ -843,7 +838,7 @@ function normalizeConcurrency(value) {
 }
 
 function isRawImageFile(file) {
-  return pathExt(file?.name).toLowerCase() === '.dng';
+  return RAW_IMAGE_EXTENSIONS.has(pathExt(file?.name).toLowerCase());
 }
 
 function pathExt(filename) {

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import OpenAI from 'openai';
 import sharp from 'sharp';
+import { handleUpload } from '@vercel/blob/client';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -321,6 +322,25 @@ app.put('/api/state', async (req, res, next) => {
 
 app.post('/api/import-images', async (req, res, next) => {
   try {
+    if (req.body?.type) {
+      if (!process.env.BLOB_READ_WRITE_TOKEN) {
+        return res.status(501).json({ error: 'BLOB_READ_WRITE_TOKEN is not configured for client uploads.' });
+      }
+      const result = await handleUpload({
+        request: req,
+        body: req.body,
+        onBeforeGenerateToken: async (pathname) => ({
+          allowedContentTypes: ['image/jpeg'],
+          maximumSizeInBytes: 50 * 1024 * 1024,
+          addRandomSuffix: false,
+          allowOverwrite: false,
+          tokenPayload: pathname
+        }),
+        onUploadCompleted: async () => {}
+      });
+      return res.json(result);
+    }
+
     await ensureDirs();
     const files = Array.isArray(req.body?.files) ? req.body.files : [];
     if (files.length === 0) return res.status(400).json({ error: 'No files were provided.' });

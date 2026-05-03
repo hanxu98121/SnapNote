@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { upload } from '@vercel/blob/client';
 import './styles.css';
 
 const GROUPS_STORAGE_KEY = 'snapnote.groups.v1';
+const MAX_UPLOAD_WIDTH = 1800;
 
 function App() {
   const [images, setImages] = useState([]);
@@ -11,6 +13,7 @@ function App() {
   const bulkLoadInputRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkLoadStatus, setBulkLoadStatus] = useState('');
   const [error, setError] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [promptSaved, setPromptSaved] = useState(false);
@@ -95,27 +98,57 @@ function App() {
 
     setError('');
     setBulkLoading(true);
+    setBulkLoadStatus(`Preparing ${files.length} image(s)...`);
     try {
-      const payload = await Promise.all(
-        files.map(async (file) => ({
-          name: file.name,
-          type: file.type,
-          data: await fileToBase64(file)
-        }))
-      );
-
-      const response = await fetch('/api/import-images', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files: payload })
-      });
-      if (!response.ok) throw new Error(await readError(response));
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        setBulkLoadStatus(`Resizing ${file.name} (${index + 1}/${files.length})...`);
+        const uploadFile = await prepareImageForUpload(file);
+        setBulkLoadStatus(`Uploading ${uploadFile.name} (${index + 1}/${files.length})...`);
+        await upload(`images/${Date.now()}-${uploadFile.name}`, uploadFile, {
+          access: 'private',
+          handleUploadUrl: '/api/import-images',
+          multipart: true,
+          contentType: uploadFile.type,
+          onUploadProgress: ({ percentage }) => {
+            setBulkLoadStatus(`Uploading ${uploadFile.name} (${Math.round(percentage)}%)`);
+          }
+        });
+      }
+      setBulkLoadStatus(`Imported ${files.length} image(s).`);
       await refreshState();
     } catch (err) {
-      setError(err.message);
+      if (isBlobUploadUnavailable(err)) {
+        setBulkLoadStatus('Blob upload unavailable. Saving images locally...');
+        await uploadImagesLocally(files);
+        setBulkLoadStatus(`Imported ${files.length} image(s) locally.`);
+        await refreshState();
+      } else {
+        setError(err.message);
+      }
     } finally {
       setBulkLoading(false);
     }
+  }
+
+  async function uploadImagesLocally(files) {
+    const payload = await Promise.all(
+      files.map(async (file) => {
+        const uploadFile = await prepareImageForUpload(file);
+        return {
+          name: uploadFile.name,
+          type: uploadFile.type,
+          data: await blobToBase64(uploadFile)
+        };
+      })
+    );
+
+    const response = await fetch('/api/import-images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: payload })
+    });
+    if (!response.ok) throw new Error(await readError(response));
   }
 
   async function persistGroups(nextGroups) {
@@ -298,6 +331,7 @@ function App() {
       <SystemPromptPanel prompt={systemPrompt} saved={promptSaved} onChange={setSystemPrompt} onSave={saveSystemPrompt} />
 
       {error && <section className="error">{error}</section>}
+      {bulkLoadStatus ? <section className="notice">{bulkLoadStatus}</section> : null}
       {loading ? <section className="empty">Loading images and state...</section> : null}
       {!loading && groups.length === 0 ? <section className="empty">No screenshots found in input_image/.</section> : null}
 
@@ -556,25 +590,57 @@ async function readError(response) {
   }
 }
 
-function fileToBase64(file) {
+async function prepareImageForUpload(file) {
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  try {
+    const scale = Math.min(1, MAX_UPLOAD_WIDTH / bitmap.width);
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error(`Could not resize ${file.name}.`);
+    context.drawImage(bitmap, 0, 0, width, height);
+    const blob = await canvasToBlob(canvas, 'image/jpeg', 0.82);
+    return new File([blob], jpegName(file.name), { type: 'image/jpeg' });
+  } finally {
+    bitmap.close();
+  }
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Could not compress image.'));
+    }, type, quality);
+  });
+}
+
+function jpegName(filename) {
+  const base = filename.replace(/\.[^.]+$/, '') || 'image';
+  return `${base}.jpg`;
+}
+
+function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result;
       if (typeof result !== 'string') {
-        reject(new Error(`Could not read ${file.name}.`));
+        reject(new Error('Could not read image.'));
         return;
       }
-      const base64 = result.split(',')[1];
-      if (!base64) {
-        reject(new Error(`Could not read ${file.name}.`));
-        return;
-      }
-      resolve(base64);
+      resolve(result.split(',')[1] || '');
     };
-    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
-    reader.readAsDataURL(file);
+    reader.onerror = () => reject(new Error('Could not read image.'));
+    reader.readAsDataURL(blob);
   });
+}
+
+function isBlobUploadUnavailable(error) {
+  return /BLOB_READ_WRITE_TOKEN|501|not configured/i.test(error.message || '');
 }
 
 createRoot(document.getElementById('root')).render(<App />);

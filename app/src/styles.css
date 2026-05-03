@@ -499,15 +499,12 @@ code {
 }
 
 .thumb {
-  align-items: center;
   background: #ffffff;
   border-radius: 8px;
   box-shadow: var(--light-ring);
   display: grid;
   gap: 10px;
-  grid-template-columns: 66px minmax(0, 1fr) auto;
   margin: 0;
-  min-height: 70px;
   padding: 8px;
   position: relative;
 }
@@ -518,16 +515,22 @@ code {
     rgba(0, 112, 243, 0.22) 0 0 0 3px;
 }
 
-.thumb img,
-.missing-image {
-  aspect-ratio: 1.25 / 1;
-  background: var(--surface-soft);
+.thumb-preview {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  min-height: 180px;
   border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-soft);
   box-shadow: inset 0 0 0 1px #ebebeb;
+}
+
+.thumb-preview img,
+.missing-image {
   display: block;
-  height: 52px;
-  object-fit: cover;
-  width: 66px;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .missing-image {
@@ -537,6 +540,35 @@ code {
   font-size: 11px;
   justify-content: center;
   text-align: center;
+}
+
+.thumb-details {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 2px 2px;
+}
+
+.thumb-topline {
+  align-items: start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.thumb-subline {
+  color: var(--muted);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.thumb-preview .image-select {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.thumb-preview .image-select:hover:not(:disabled) {
+  border-radius: 6px;
 }
 
 .image-select {
@@ -570,15 +602,8 @@ code {
   color: transparent;
 }
 
-.thumb-title {
-  margin: 0;
-  min-width: 0;
-  padding-right: 24px;
-}
-
-.thumb-title strong {
+.thumb-details strong {
   color: var(--text);
-  display: block;
   font-size: 13px;
   font-weight: 500;
   overflow: hidden;
@@ -586,18 +611,18 @@ code {
   white-space: nowrap;
 }
 
-.thumb-title span {
+.thumb-topline span {
   color: var(--muted);
-  display: block;
   font-family: "Geist Mono", ui-monospace, monospace;
   font-size: 12px;
-  margin-top: 4px;
 }
 
 .image-actions {
-  align-content: center;
   align-items: center;
-  flex-direction: column;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .image-actions button {
@@ -661,6 +686,10 @@ code {
   background: #fffafa;
   box-shadow: rgba(155, 28, 28, 0.16) 0 0 0 1px;
   color: #9b1c1c;
+}
+
+.group-row.drag-over .image-column {
+  box-shadow: inset 0 0 0 1px rgba(0, 112, 243, 0.2);
 }
 
 @media (max-width: 1180px) {

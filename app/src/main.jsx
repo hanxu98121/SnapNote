@@ -734,28 +734,35 @@ function GroupRow({
                 onDragStart={(event) => handleDragStart(event, imageId)}
                 key={imageId}
               >
-                <button
-                  type="button"
-                  className="image-select"
-                  aria-pressed={selected}
-                  aria-label={`${selected ? 'Deselect' : 'Select'} ${image?.name || imageId}`}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onToggleImageSelection(imageId);
-                  }}
-                >
-                  <span className="image-select-box">{selected ? '✓' : ''}</span>
-                </button>
-                {image ? <img src={image.url} alt={image.name} /> : <div className="missing-image">Missing image</div>}
-                <figcaption className="thumb-title" title={image?.name || imageId}>
-                  <strong>{image?.name || imageId}</strong>
-                  <span>{image?.source || 'local'}</span>
-                </figcaption>
-                <div className="image-actions">
-                  {group.images.length > 1 ? <button onClick={() => onSplitImage(group.id, imageId)}>Split</button> : null}
-                  <button onClick={() => onDeleteImage(imageId)}>Delete</button>
+                <div className="thumb-preview">
+                  <button
+                    type="button"
+                    className="image-select"
+                    aria-pressed={selected}
+                    aria-label={`${selected ? 'Deselect' : 'Select'} ${image?.name || imageId}`}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onToggleImageSelection(imageId);
+                    }}
+                  >
+                    <span className="image-select-box">{selected ? '✓' : ''}</span>
+                  </button>
+                  {image ? <img src={image.url} alt={image.name} /> : <div className="missing-image">Missing image</div>}
                 </div>
+                <figcaption className="thumb-details" title={image?.name || imageId}>
+                  <div className="thumb-topline">
+                    <strong>{image?.name || imageId}</strong>
+                    <span>{image?.source || 'local'}</span>
+                  </div>
+                  <div className="thumb-subline">
+                    <span>{formatBytes(image?.size)}</span>
+                  </div>
+                  <div className="image-actions">
+                    {group.images.length > 1 ? <button onClick={() => onSplitImage(group.id, imageId)}>Split</button> : null}
+                    <button onClick={() => onDeleteImage(imageId)}>Delete</button>
+                  </div>
+                </figcaption>
               </figure>
             );
           })}
@@ -814,7 +821,8 @@ function normalizeImages(rawImages) {
     ...image,
     id: image.id || image.pathname || image.name,
     name: image.name || image.pathname || image.id,
-    source: image.source || 'local'
+    source: image.source || 'local',
+    size: typeof image.size === 'number' ? image.size : undefined
   }));
 }
 
@@ -833,8 +841,9 @@ function mergeGroupsWithImages(rawGroups, images) {
 
   for (const group of rawGroups) {
     const keptImages = (group.images || []).filter((id) => imageIds.has(id));
-    if (keptImages.length === 0) continue;
-    keptImages.forEach((id) => groupedIds.add(id));
+    if (keptImages.length > 0) {
+      keptImages.forEach((id) => groupedIds.add(id));
+    }
     groups.push({ ...group, images: keptImages, status: group.status === 'generating' ? 'pending' : group.status || 'pending' });
   }
 
@@ -990,6 +999,19 @@ function blobToBase64(blob) {
 
 function isBlobUploadUnavailable(error) {
   return /BLOB_READ_WRITE_TOKEN|501|not configured/i.test(error.message || '');
+}
+
+function formatBytes(bytes) {
+  if (typeof bytes !== 'number' || Number.isNaN(bytes) || bytes <= 0) return 'Unknown size';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const digits = unitIndex === 0 || value >= 10 ? 0 : 1;
+  return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
 createRoot(document.getElementById('root')).render(<App />);

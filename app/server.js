@@ -74,15 +74,20 @@ async function writeSystemPrompt(prompt) {
 async function listImages() {
   await ensureDirs();
   const entries = await fs.readdir(inputImageDir, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && imageExts.has(path.extname(entry.name).toLowerCase()))
-    .map((entry) => ({
+  const files = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !imageExts.has(path.extname(entry.name).toLowerCase())) continue;
+    const fullPath = path.join(inputImageDir, entry.name);
+    const stat = await fs.stat(fullPath);
+    files.push({
       id: entry.name,
       name: entry.name,
       url: `/images/${encodeURIComponent(entry.name)}`,
-      source: 'local'
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+      source: 'local',
+      size: stat.size
+    });
+  }
+  return files.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function createDefaultGroups(images) {
@@ -139,7 +144,7 @@ async function storeImportedImage(file) {
     const outputPath = await uniqueImagePath(sourceName);
     await fs.writeFile(outputPath, inputBuffer);
     const name = path.basename(outputPath);
-    return { id: name, name, url: `/images/${encodeURIComponent(name)}`, source: 'local' };
+    return { id: name, name, url: `/images/${encodeURIComponent(name)}`, source: 'local', size: inputBuffer.length };
   }
 
   const outputName = normalizeImportedName(sourceName.replace(/\.[^.]+$/, ''), '.jpg');
@@ -150,7 +155,7 @@ async function storeImportedImage(file) {
     .toBuffer();
   await fs.writeFile(outputPath, jpegBuffer);
   const name = path.basename(outputPath);
-  return { id: name, name, url: `/images/${encodeURIComponent(name)}`, source: 'local' };
+  return { id: name, name, url: `/images/${encodeURIComponent(name)}`, source: 'local', size: jpegBuffer.length };
 }
 
 function mergeStateWithImages(state, images) {
@@ -160,8 +165,9 @@ function mergeStateWithImages(state, images) {
 
   for (const group of state.groups || []) {
     const keptImages = (group.images || []).filter((name) => imageNames.has(name));
-    if (keptImages.length === 0) continue;
-    keptImages.forEach((name) => groupedNames.add(name));
+    if (keptImages.length > 0) {
+      keptImages.forEach((name) => groupedNames.add(name));
+    }
     groups.push(normalizeGroup({ ...group, images: keptImages }));
   }
 

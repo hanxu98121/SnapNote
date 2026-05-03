@@ -681,8 +681,8 @@ function GroupRow({
 }) {
   const [dragOver, setDragOver] = useState(false);
 
-  function handleDragStart(event, imageName) {
-    event.dataTransfer.setData('application/json', JSON.stringify({ imageName, fromGroupId: group.id }));
+  function handleDragStart(event, imageId) {
+    event.dataTransfer.setData('application/json', JSON.stringify({ imageId, fromGroupId: group.id }));
     event.dataTransfer.effectAllowed = 'move';
   }
 
@@ -692,7 +692,7 @@ function GroupRow({
     const raw = event.dataTransfer.getData('application/json');
     if (!raw) return;
     const payload = JSON.parse(raw);
-    await onDropImage(payload.imageName, payload.fromGroupId, group.id);
+    await onDropImage(payload.imageId, payload.fromGroupId, group.id);
   }
 
   return (
@@ -713,7 +713,15 @@ function GroupRow({
         <div className="group-path">{group.outputFile || `${group.images.length} image${group.images.length === 1 ? '' : 's'}`}</div>
       </section>
 
-      <section className="cell image-column">
+      <section
+        className="cell image-column"
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setDragOver(true);
+        }}
+        onDrop={handleDrop}
+      >
         <div className="image-stack">
           {group.images.length === 0 ? <div className="drop-placeholder">Drop images here</div> : null}
           {group.images.map((imageId) => {

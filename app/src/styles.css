@@ -446,6 +446,10 @@ code {
   outline-offset: -2px;
 }
 
+.image-column {
+  cursor: copy;
+}
+
 .cell {
   background: #ffffff;
   min-width: 0;
@@ -480,6 +484,7 @@ code {
 .image-stack {
   display: grid;
   gap: 8px;
+  min-height: 180px;
 }
 
 .drop-placeholder {
@@ -490,7 +495,7 @@ code {
   color: var(--muted);
   display: flex;
   justify-content: center;
-  min-height: 70px;
+  min-height: 180px;
 }
 
 .thumb {

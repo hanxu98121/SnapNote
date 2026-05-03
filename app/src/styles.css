@@ -264,6 +264,12 @@ figcaption {
   white-space: nowrap;
 }
 
+.image-source {
+  color: #7a879a;
+  margin-left: 8px;
+  text-transform: uppercase;
+}
+
 label {
   color: #4a566d;
   display: block;

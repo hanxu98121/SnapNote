@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
+const GROUPS_STORAGE_KEY = 'snapnote.groups.v1';
+
 function App() {
   const [images, setImages] = useState([]);
   const [groups, setGroups] = useState([]);
@@ -19,7 +21,7 @@ function App() {
     model: '',
     baseURL: 'https://ark.cn-beijing.volces.com/api/v3'
   });
-  const imageMap = useMemo(() => new Map(images.map((image) => [image.name, image])), [images]);
+  const imageMap = useMemo(() => new Map(images.map((image) => [image.id, image])), [images]);
 
   useEffect(() => {
     refreshState();
@@ -67,9 +69,14 @@ function App() {
       const response = await fetch('/api/state');
       if (!response.ok) throw new Error(await readError(response));
       const data = await response.json();
-      setImages(data.images || []);
-      groupsRef.current = data.groups || [];
-      setGroups(data.groups || []);
+      const nextImages = normalizeImages(data.images || []);
+      const storedGroups = readStoredGroups();
+      const fallbackGroups = normalizeGroups(data.groups || [], nextImages);
+      const nextGroups = mergeGroupsWithImages(storedGroups.length > 0 ? storedGroups : fallbackGroups, nextImages);
+      setImages(nextImages);
+      groupsRef.current = nextGroups;
+      setGroups(nextGroups);
+      writeStoredGroups(nextGroups);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -119,6 +126,7 @@ function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ groups: nextGroups })
     });
+    writeStoredGroups(nextGroups);
     if (!response.ok) throw new Error(await readError(response));
   }
 
@@ -146,7 +154,15 @@ function App() {
       const response = await fetch(`/api/generate/${encodeURIComponent(groupId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: providerConfig }),
+        body: JSON.stringify({
+          provider: providerConfig,
+          group: groupsRef.current.find((group) => group.id === groupId),
+          images: groupsRef.current
+            .find((group) => group.id === groupId)
+            ?.images.map((id) => imageMap.get(id))
+            .filter(Boolean),
+          systemPrompt
+        }),
         signal: controller.signal
       });
       window.clearTimeout(timeoutId);
@@ -189,9 +205,10 @@ function App() {
       });
       if (!response.ok) throw new Error(await readError(response));
       const updated = await response.json();
-      const updatedGroups = groupsRef.current.map((item) => (item.id === groupId ? updated : item));
+      const updatedGroups = groupsRef.current.map((item) => (item.id === groupId ? { ...item, ...updated } : item));
       groupsRef.current = updatedGroups;
       setGroups(updatedGroups);
+      writeStoredGroups(updatedGroups);
     } catch (err) {
       setError(err.message);
     }
@@ -202,14 +219,14 @@ function App() {
     await navigator.clipboard.writeText(group.markdown || '');
   }
 
-  async function splitImage(groupId, imageName) {
+  async function splitImage(groupId, imageId) {
     const source = groupsRef.current.find((group) => group.id === groupId);
     if (!source || source.images.length < 2) return;
     const nextGroups = groupsRef.current
-      .map((group) => (group.id === groupId ? { ...group, images: group.images.filter((name) => name !== imageName) } : group))
+      .map((group) => (group.id === groupId ? { ...group, images: group.images.filter((id) => id !== imageId) } : group))
       .concat({
         id: nextGroupId(groupsRef.current),
-        images: [imageName],
+        images: [imageId],
         instruction: '',
         markdown: '',
         status: 'pending',
@@ -219,12 +236,12 @@ function App() {
     await persistGroups(nextGroups);
   }
 
-  async function moveImageToGroup(imageName, fromGroupId, toGroupId) {
+  async function moveImageToGroup(imageId, fromGroupId, toGroupId) {
     if (fromGroupId === toGroupId) return;
     const nextGroups = groupsRef.current
       .map((group) => {
-        if (group.id === fromGroupId) return { ...group, images: group.images.filter((name) => name !== imageName) };
-        if (group.id === toGroupId) return { ...group, images: [...group.images, imageName], status: 'pending' };
+        if (group.id === fromGroupId) return { ...group, images: group.images.filter((id) => id !== imageId) };
+        if (group.id === toGroupId) return { ...group, images: [...group.images, imageId], status: 'pending' };
         return group;
       })
       .filter((group) => group.images.length > 0);
@@ -274,7 +291,7 @@ function App() {
       </header>
 
       <section className="notice">
-        Put screenshots in <code>input_image/</code> or use Bulk load to import multiple pictures. Drag images between groups. Each group is sent to the AI model with one shared instruction. Markdown saves to <code>output/</code>.
+        Put screenshots in <code>input_image/</code> locally or use Bulk load to import pictures. On Vercel, imports sync to private Blob storage and group layout is kept in this browser.
       </section>
 
       <ProviderPanel config={providerConfig} onChange={setProviderConfig} />
@@ -409,13 +426,16 @@ function GroupRow({ group, imageMap, onInstructionChange, onPersist, onMarkdownC
         </div>
         <div className="image-stack">
           {group.images.length === 0 ? <div className="drop-placeholder">Drop images here</div> : null}
-          {group.images.map((imageName) => {
-            const image = imageMap.get(imageName);
+          {group.images.map((imageId) => {
+            const image = imageMap.get(imageId);
             return (
-              <figure className="image-card" draggable onDragStart={(event) => handleDragStart(event, imageName)} key={imageName}>
-                {image ? <img src={image.url} alt={imageName} /> : <div className="missing-image">Missing image</div>}
-                <figcaption title={imageName}>{imageName}</figcaption>
-                {group.images.length > 1 ? <button onClick={() => onSplitImage(group.id, imageName)}>Split</button> : null}
+              <figure className="image-card" draggable onDragStart={(event) => handleDragStart(event, imageId)} key={imageId}>
+                {image ? <img src={image.url} alt={image.name} /> : <div className="missing-image">Missing image</div>}
+                <figcaption title={image?.name || imageId}>
+                  {image?.name || imageId}
+                  {image?.source ? <span className="image-source">{image.source}</span> : null}
+                </figcaption>
+                {group.images.length > 1 ? <button onClick={() => onSplitImage(group.id, imageId)}>Split</button> : null}
               </figure>
             );
           })}
@@ -467,6 +487,64 @@ function nextGroupId(groups) {
   let index = groups.length + 1;
   while (existing.has(`group-${String(index).padStart(3, '0')}`)) index += 1;
   return `group-${String(index).padStart(3, '0')}`;
+}
+
+function normalizeImages(rawImages) {
+  return rawImages.map((image) => ({
+    ...image,
+    id: image.id || image.pathname || image.name,
+    name: image.name || image.pathname || image.id,
+    source: image.source || 'local'
+  }));
+}
+
+function normalizeGroups(rawGroups, images) {
+  const idByName = new Map(images.map((image) => [image.name, image.id]));
+  return rawGroups.map((group) => ({
+    ...group,
+    images: (group.images || []).map((id) => idByName.get(id) || id)
+  }));
+}
+
+function mergeGroupsWithImages(rawGroups, images) {
+  const imageIds = new Set(images.map((image) => image.id));
+  const groupedIds = new Set();
+  const groups = [];
+
+  for (const group of rawGroups) {
+    const keptImages = (group.images || []).filter((id) => imageIds.has(id));
+    if (keptImages.length === 0) continue;
+    keptImages.forEach((id) => groupedIds.add(id));
+    groups.push({ ...group, images: keptImages, status: group.status === 'generating' ? 'pending' : group.status || 'pending' });
+  }
+
+  for (const image of images) {
+    if (groupedIds.has(image.id)) continue;
+    groups.push({
+      id: nextGroupId(groups),
+      images: [image.id],
+      instruction: '',
+      markdown: '',
+      status: 'pending',
+      outputFile: '',
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  return groups;
+}
+
+function readStoredGroups() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(GROUPS_STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredGroups(groups) {
+  window.localStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(groups));
 }
 
 async function readError(response) {

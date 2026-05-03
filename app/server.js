@@ -64,8 +64,10 @@ async function listImages() {
   return entries
     .filter((entry) => entry.isFile() && imageExts.has(path.extname(entry.name).toLowerCase()))
     .map((entry) => ({
+      id: entry.name,
       name: entry.name,
-      url: `/images/${encodeURIComponent(entry.name)}`
+      url: `/images/${encodeURIComponent(entry.name)}`,
+      source: 'local'
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -123,7 +125,8 @@ async function storeImportedImage(file) {
   if (!shouldTranscode) {
     const outputPath = await uniqueImagePath(sourceName);
     await fs.writeFile(outputPath, inputBuffer);
-    return path.basename(outputPath);
+    const name = path.basename(outputPath);
+    return { id: name, name, url: `/images/${encodeURIComponent(name)}`, source: 'local' };
   }
 
   const outputName = normalizeImportedName(sourceName.replace(/\.[^.]+$/, ''), '.jpg');
@@ -133,7 +136,8 @@ async function storeImportedImage(file) {
     .jpeg({ quality: 82, mozjpeg: true })
     .toBuffer();
   await fs.writeFile(outputPath, jpegBuffer);
-  return path.basename(outputPath);
+  const name = path.basename(outputPath);
+  return { id: name, name, url: `/images/${encodeURIComponent(name)}`, source: 'local' };
 }
 
 function mergeStateWithImages(state, images) {

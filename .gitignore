@@ -9,3 +9,5 @@ output/*
 !input_image/.gitkeep
 !input_text/.gitkeep
 !output/.gitkeep
+test/
+.vercel

@@ -115,15 +115,23 @@ textarea:focus-visible {
 }
 
 .mark {
-  background: var(--text);
+  background: #ffffff;
   border-radius: 50%;
   color: #ffffff;
   display: grid;
   font-size: 11px;
   font-weight: 600;
-  height: 28px;
+  height: 34px;
+  overflow: hidden;
   place-items: center;
-  width: 28px;
+  width: 34px;
+}
+
+.mark img {
+  display: block;
+  height: 54px;
+  object-fit: contain;
+  width: 54px;
 }
 
 .brand strong {

@@ -19,8 +19,6 @@ npm run dev
 
 Open the Vite URL, usually `http://127.0.0.1:5173`.
 
-If you are running inside WSL, use a Linux Node.js install. Windows `npm.exe` can fail on the WSL UNC path during Vite commands.
-
 ## Local Workflow
 
 1. Put screenshots in `input_image/` or use `Bulk load`.
@@ -83,8 +81,6 @@ npm run dev
 ```
 
 打开 Vite 地址，通常是 `http://127.0.0.1:5173`。
-
-如果在 WSL 中运行，请使用 Linux 版 Node.js。Windows 的 `npm.exe` 可能会在 WSL UNC 路径下执行 Vite 时失败。
 
 ## 本地工作流
 

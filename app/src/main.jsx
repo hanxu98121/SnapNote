@@ -213,6 +213,7 @@ function App() {
             .find((group) => group.id === groupId)
             ?.images.map((id) => imageMap.get(id))
             .filter(Boolean),
+          previousMarkdown: groupsRef.current.find((group) => group.id === groupId)?.markdown || '',
           systemPrompt
         }),
         signal: controller.signal

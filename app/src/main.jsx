@@ -25,6 +25,20 @@ const RAW_IMAGE_EXTENSIONS = new Set([
   '.rwl',
   '.3fr'
 ]);
+const IMAGE_FILE_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.gif',
+  '.bmp',
+  '.tif',
+  '.tiff',
+  '.heic',
+  '.heif',
+  '.avif',
+  ...RAW_IMAGE_EXTENSIONS
+]);
 
 function App() {
   const [images, setImages] = useState([]);
@@ -124,22 +138,33 @@ function App() {
     event.target.value = '';
     if (files.length === 0) return;
 
+    setBulkLoading(true);
+    try {
+      await uploadImages(files);
+      await refreshState();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBulkLoading(false);
+    }
+  }
+
+  async function uploadImages(files) {
     setError('');
     if (files.some(isRawImageFile)) {
-      setError('RAW/DNG is not supported in browser upload. Please transcode to JPEG or PNG before uploading.');
       setBulkLoadStatus('RAW/DNG detected. Please transcode to JPEG or PNG before uploading.');
-      return;
+      throw new Error('RAW/DNG is not supported in browser upload. Please transcode to JPEG or PNG before uploading.');
     }
 
-    setBulkLoading(true);
     setBulkLoadStatus(`Preparing ${files.length} image(s)...`);
     try {
+      const uploaded = [];
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index];
         setBulkLoadStatus(`Resizing ${file.name} (${index + 1}/${files.length})...`);
         const uploadFile = await prepareImageForUpload(file);
         setBulkLoadStatus(`Uploading ${uploadFile.name} (${index + 1}/${files.length})...`);
-        await upload(`images/${Date.now()}-${uploadFile.name}`, uploadFile, {
+        const blob = await upload(`images/${Date.now()}-${uploadFile.name}`, uploadFile, {
           access: 'private',
           handleUploadUrl: '/api/import-images',
           multipart: true,
@@ -148,18 +173,40 @@ function App() {
             setBulkLoadStatus(`Uploading ${uploadFile.name} (${Math.round(percentage)}%)`);
           }
         });
+        uploaded.push(imageFromUploadedBlob(blob));
       }
       setBulkLoadStatus(`Imported ${files.length} image(s).`);
-      await refreshState();
+      return uploaded;
     } catch (err) {
-      if (isBlobUploadUnavailable(err)) {
-        setBulkLoadStatus('Blob upload unavailable. Saving images locally...');
-        await uploadImagesLocally(files);
-        setBulkLoadStatus(`Imported ${files.length} image(s) locally.`);
-        await refreshState();
-      } else {
-        setError(err.message);
-      }
+      if (!isBlobUploadUnavailable(err)) throw err;
+      setBulkLoadStatus('Blob upload unavailable. Saving images locally...');
+      const imported = await uploadImagesLocally(files);
+      setBulkLoadStatus(`Imported ${files.length} image(s) locally.`);
+      return imported;
+    }
+  }
+
+  async function dropFilesIntoGroup(files, groupId) {
+    if (files.length === 0) return;
+    setBulkLoading(true);
+    try {
+      const importedImages = await uploadImages(files);
+      const nextImages = mergeImages(images, importedImages);
+      const importedIds = importedImages.map((image) => image.id);
+      const nextGroups = groupsRef.current.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              images: Array.from(new Set([...group.images, ...importedIds])),
+              status: 'pending',
+              updatedAt: new Date().toISOString()
+            }
+          : group
+      );
+      setImages(nextImages);
+      await persistGroups(nextGroups);
+    } catch (err) {
+      setError(err.message);
     } finally {
       setBulkLoading(false);
     }
@@ -416,7 +463,7 @@ function App() {
         if (group.id === toGroupId) return { ...group, images: [...group.images, imageId], status: 'pending' };
         return group;
       })
-      .filter((group) => group.images.length > 0);
+      .filter((group) => group.id !== fromGroupId || group.images.length > 0);
     await persistGroups(nextGroups);
   }
 
@@ -568,6 +615,7 @@ function App() {
                 onSave={() => saveGroup(group.id)}
                 onCopy={() => copyMarkdown(group.id)}
                 onDropImage={moveImageToGroup}
+                onDropFiles={(files) => dropFilesIntoGroup(files, group.id)}
                 onSplitImage={splitImage}
                 onDeleteImage={deleteImage}
                 onToggleImageSelection={(imageId) =>
@@ -675,6 +723,7 @@ function GroupRow({
   onSave,
   onCopy,
   onDropImage,
+  onDropFiles,
   onSplitImage,
   onDeleteImage,
   onToggleImageSelection
@@ -689,6 +738,12 @@ function GroupRow({
   async function handleDrop(event) {
     event.preventDefault();
     setDragOver(false);
+    const files = Array.from(event.dataTransfer.files || []).filter((file) => file.type.startsWith('image/') || isKnownImageFile(file));
+    if (files.length > 0) {
+      await onDropFiles(files);
+      return;
+    }
+
     const raw = event.dataTransfer.getData('application/json');
     if (!raw) return;
     const payload = JSON.parse(raw);
@@ -912,8 +967,53 @@ function normalizeConcurrency(value) {
   return Math.min(10, Math.max(1, parsed));
 }
 
+function mergeImages(currentImages, incomingImages) {
+  const byId = new Map(currentImages.map((image) => [image.id, image]));
+  for (const image of incomingImages) {
+    byId.set(image.id, image);
+  }
+  return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function uploadImagesLocally(files) {
+  const payload = [];
+  for (const file of files) {
+    const uploadFile = await prepareImageForUpload(file);
+    payload.push({
+      name: uploadFile.name,
+      data: await blobToBase64(uploadFile)
+    });
+  }
+
+  const response = await fetch('/api/import-images', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: payload })
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  const data = await response.json();
+  return normalizeImages(data.imported || []);
+}
+
+function imageFromUploadedBlob(blob) {
+  const pathname = blob?.pathname || '';
+  const name = pathname.split('/').pop() || blob?.url?.split('/').pop() || 'image.jpg';
+  return {
+    id: pathname ? `blob:${pathname}` : blob?.url || name,
+    name,
+    pathname,
+    url: pathname ? `/api/blob-view?pathname=${encodeURIComponent(pathname)}` : blob?.url,
+    source: 'cloud',
+    size: typeof blob?.size === 'number' ? blob.size : undefined
+  };
+}
+
 function isRawImageFile(file) {
   return RAW_IMAGE_EXTENSIONS.has(pathExt(file?.name).toLowerCase());
+}
+
+function isKnownImageFile(file) {
+  return IMAGE_FILE_EXTENSIONS.has(pathExt(file?.name).toLowerCase());
 }
 
 function pathExt(filename) {

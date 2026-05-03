@@ -205,6 +205,7 @@ function App() {
       const updatedGroups = groupsRef.current.map((group) => (group.id === groupId ? updated : group));
       groupsRef.current = updatedGroups;
       setGroups(updatedGroups);
+      writeStoredGroups(updatedGroups);
     } catch (err) {
       const message = err.name === 'AbortError' ? 'Generation timed out after 5 minutes. Check the model endpoint and retry.' : err.message;
       setError(message);
@@ -251,6 +252,36 @@ function App() {
   async function copyMarkdown(groupId) {
     const group = groupsRef.current.find((item) => item.id === groupId);
     await navigator.clipboard.writeText(group.markdown || '');
+  }
+
+  async function deleteImage(imageId) {
+    setError('');
+    const image = imageMap.get(imageId);
+    if (!image) return;
+
+    try {
+      const response = await fetch('/api/delete-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image })
+      });
+      if (!response.ok) throw new Error(await readError(response));
+
+      const nextImages = images.filter((item) => item.id !== imageId);
+      const nextGroups = groupsRef.current
+        .map((group) => ({
+          ...group,
+          images: group.images.filter((id) => id !== imageId),
+          updatedAt: new Date().toISOString()
+        }))
+        .filter((group) => group.images.length > 0 || group.instruction?.trim() || group.markdown?.trim());
+      setImages(nextImages);
+      groupsRef.current = nextGroups;
+      setGroups(nextGroups);
+      writeStoredGroups(nextGroups);
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   async function exportAllMarkdown() {
@@ -379,6 +410,7 @@ function App() {
             onCopy={() => copyMarkdown(group.id)}
             onDropImage={moveImageToGroup}
             onSplitImage={splitImage}
+            onDeleteImage={deleteImage}
           />
         ))}
       </section>
@@ -456,7 +488,7 @@ function ProviderPanel({ config, onChange }) {
   );
 }
 
-function GroupRow({ group, imageMap, onInstructionChange, onPersist, onMarkdownChange, onGenerate, onSave, onCopy, onDropImage, onSplitImage }) {
+function GroupRow({ group, imageMap, onInstructionChange, onPersist, onMarkdownChange, onGenerate, onSave, onCopy, onDropImage, onSplitImage, onDeleteImage }) {
   const [dragOver, setDragOver] = useState(false);
 
   function handleDragStart(event, imageName) {
@@ -499,7 +531,10 @@ function GroupRow({ group, imageMap, onInstructionChange, onPersist, onMarkdownC
                   {image?.name || imageId}
                   {image?.source ? <span className="image-source">{image.source}</span> : null}
                 </figcaption>
-                {group.images.length > 1 ? <button onClick={() => onSplitImage(group.id, imageId)}>Split</button> : null}
+                <div className="image-actions">
+                  {group.images.length > 1 ? <button onClick={() => onSplitImage(group.id, imageId)}>Split</button> : null}
+                  <button onClick={() => onDeleteImage(imageId)}>Delete</button>
+                </div>
               </figure>
             );
           })}

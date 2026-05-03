@@ -270,6 +270,11 @@ figcaption {
   text-transform: uppercase;
 }
 
+.image-actions {
+  display: flex;
+  gap: 8px;
+}
+
 label {
   color: #4a566d;
   display: block;

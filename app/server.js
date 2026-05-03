@@ -14,6 +14,7 @@ const outputDir = path.join(rootDir, 'output');
 const statePath = path.join(rootDir, 'state.json');
 const systemPromptPath = path.join(__dirname, 'system-prompt.json');
 const imageExts = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.heic', '.heif']);
+const importableImageExts = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.heic', '.heif', '.avif', '.tif', '.tiff']);
 
 const app = express();
 app.use(express.json({ limit: '80mb' }));
@@ -78,7 +79,61 @@ function createDefaultGroups(images) {
     status: 'pending',
     outputFile: '',
     updatedAt: new Date().toISOString()
-  }));
+    }));
+}
+
+function decodeBase64(base64, filename) {
+  if (typeof base64 !== 'string' || !base64.trim()) {
+    throw new Error(`Missing file data for ${filename}.`);
+  }
+  return Buffer.from(base64, 'base64');
+}
+
+function normalizeImportedName(name, fallbackExt = '') {
+  const base = path.basename(name || 'image');
+  const parsed = path.parse(base);
+  const safeBase = cleanFilename(parsed.name || 'image') || 'image';
+  const ext = (parsed.ext || fallbackExt || '').toLowerCase();
+  return `${safeBase}${ext}`;
+}
+
+async function uniqueImagePath(filename) {
+  let candidate = path.join(inputImageDir, filename);
+  const ext = path.extname(filename);
+  const base = filename.slice(0, -ext.length);
+  let index = 2;
+  while (true) {
+    try {
+      await fs.access(candidate);
+      candidate = path.join(inputImageDir, `${base}-${index}${ext}`);
+      index += 1;
+    } catch (error) {
+      if (error.code === 'ENOENT') return candidate;
+      throw error;
+    }
+  }
+}
+
+async function storeImportedImage(file) {
+  const sourceName = normalizeImportedName(file?.name);
+  const inputBuffer = decodeBase64(file?.data, sourceName);
+  const ext = path.extname(sourceName).toLowerCase();
+  const shouldTranscode = !importableImageExts.has(ext);
+
+  if (!shouldTranscode) {
+    const outputPath = await uniqueImagePath(sourceName);
+    await fs.writeFile(outputPath, inputBuffer);
+    return path.basename(outputPath);
+  }
+
+  const outputName = normalizeImportedName(sourceName.replace(/\.[^.]+$/, ''), '.jpg');
+  const outputPath = await uniqueImagePath(outputName);
+  const jpegBuffer = await sharp(inputBuffer, { limitInputPixels: false })
+    .rotate()
+    .jpeg({ quality: 82, mozjpeg: true })
+    .toBuffer();
+  await fs.writeFile(outputPath, jpegBuffer);
+  return path.basename(outputPath);
 }
 
 function mergeStateWithImages(state, images) {
@@ -255,6 +310,23 @@ app.put('/api/state', async (req, res, next) => {
     const state = { groups: Array.isArray(req.body.groups) ? req.body.groups : [] };
     await writeState(state);
     res.json(state);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/import-images', async (req, res, next) => {
+  try {
+    await ensureDirs();
+    const files = Array.isArray(req.body?.files) ? req.body.files : [];
+    if (files.length === 0) return res.status(400).json({ error: 'No files were provided.' });
+
+    const imported = [];
+    for (const file of files) {
+      imported.push(await storeImportedImage(file));
+    }
+
+    res.json({ imported });
   } catch (error) {
     next(error);
   }

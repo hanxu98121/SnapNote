@@ -77,6 +77,10 @@ h1 {
   gap: 10px;
 }
 
+.bulk-load-input {
+  display: none;
+}
+
 .notice,
 .error,
 .empty {

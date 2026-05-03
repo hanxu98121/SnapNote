@@ -6,7 +6,9 @@ function App() {
   const [images, setImages] = useState([]);
   const [groups, setGroups] = useState([]);
   const groupsRef = useRef([]);
+  const bulkLoadInputRef = useRef(null);
   const [loading, setLoading] = useState(true);
+  const [bulkLoading, setBulkLoading] = useState(false);
   const [error, setError] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [promptSaved, setPromptSaved] = useState(false);
@@ -72,6 +74,40 @@ function App() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  function openBulkLoadPicker() {
+    bulkLoadInputRef.current?.click();
+  }
+
+  async function handleBulkLoadChange(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (files.length === 0) return;
+
+    setError('');
+    setBulkLoading(true);
+    try {
+      const payload = await Promise.all(
+        files.map(async (file) => ({
+          name: file.name,
+          type: file.type,
+          data: await fileToBase64(file)
+        }))
+      );
+
+      const response = await fetch('/api/import-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: payload })
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      await refreshState();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBulkLoading(false);
     }
   }
 
@@ -218,6 +254,17 @@ function App() {
           <h1>Screenshot To Obsidian</h1>
         </div>
         <div className="actions">
+          <input
+            ref={bulkLoadInputRef}
+            className="bulk-load-input"
+            type="file"
+            accept="image/*,.heic,.heif,.bmp,.gif,.tif,.tiff,.avif"
+            multiple
+            onChange={handleBulkLoadChange}
+          />
+          <button onClick={openBulkLoadPicker} disabled={bulkLoading}>
+            {bulkLoading ? 'Loading...' : 'Bulk load'}
+          </button>
           <button onClick={refreshState}>Refresh input_image</button>
           <button className="primary" onClick={generateAll} disabled={generatingAll || groups.every((group) => group.images.length === 0)}>
             {generatingAll ? 'Generating all...' : 'Generate all'}
@@ -227,7 +274,7 @@ function App() {
       </header>
 
       <section className="notice">
-        Put screenshots in <code>input_image/</code>. Drag images between groups. Each group is sent to the AI model with one shared instruction. Markdown saves to <code>output/</code>.
+        Put screenshots in <code>input_image/</code> or use Bulk load to import multiple pictures. Drag images between groups. Each group is sent to the AI model with one shared instruction. Markdown saves to <code>output/</code>.
       </section>
 
       <ProviderPanel config={providerConfig} onChange={setProviderConfig} />
@@ -429,6 +476,27 @@ async function readError(response) {
   } catch {
     return response.statusText;
   }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== 'string') {
+        reject(new Error(`Could not read ${file.name}.`));
+        return;
+      }
+      const base64 = result.split(',')[1];
+      if (!base64) {
+        reject(new Error(`Could not read ${file.name}.`));
+        return;
+      }
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
 }
 
 createRoot(document.getElementById('root')).render(<App />);

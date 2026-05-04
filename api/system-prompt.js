@@ -1,3 +1,5 @@
+import { get, put } from '@vercel/blob';
+
 const fallbackSystemPrompt = `你是一位专业的个人知识库管理专家，擅长将截图、文本和用户说明整理成适合 Obsidian 管理的 Markdown 笔记。
 
 要求：
@@ -11,17 +13,57 @@ const fallbackSystemPrompt = `你是一位专业的个人知识库管理专家�
 8. 文末添加“使用建议”，包括推荐文件名、建议内部链接和标签。
 9. 只输出最终 Markdown，不解释处理过程。`;
 
+const systemPromptPathname = 'state/system-prompt.json';
+
+async function streamToText(stream) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
+
+async function readSystemPrompt() {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return fallbackSystemPrompt;
+  const result = await get(systemPromptPathname, { access: 'private', useCache: false });
+  if (!result || result.statusCode !== 200) return fallbackSystemPrompt;
+  const data = JSON.parse(await streamToText(result.stream));
+  return typeof data.prompt === 'string' && data.prompt.trim() ? data.prompt : fallbackSystemPrompt;
+}
+
+async function writeSystemPrompt(prompt) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    throw new Error('BLOB_READ_WRITE_TOKEN is not configured. System prompt changes cannot persist on Vercel without Blob storage.');
+  }
+  if (!prompt?.trim()) throw new Error('System prompt cannot be empty.');
+  await put(systemPromptPathname, JSON.stringify({ prompt }, null, 2) + '\n', {
+    access: 'private',
+    allowOverwrite: true,
+    contentType: 'application/json',
+    cacheControlMaxAge: 60
+  });
+}
+
 export default async function handler(req, res) {
-  if (req.method === 'GET') {
-    res.status(200).json({ prompt: fallbackSystemPrompt });
-    return;
-  }
+  try {
+    if (req.method === 'GET') {
+      res.status(200).json({ prompt: await readSystemPrompt() });
+      return;
+    }
 
-  if (req.method === 'PUT') {
-    res.status(200).json({ prompt: req.body?.prompt || fallbackSystemPrompt });
-    return;
-  }
+    if (req.method === 'PUT') {
+      await writeSystemPrompt(req.body?.prompt || '');
+      res.status(200).json({ prompt: await readSystemPrompt() });
+      return;
+    }
 
-  res.setHeader('Allow', 'GET, PUT');
-  res.status(405).json({ error: 'Method not allowed.' });
+    res.setHeader('Allow', 'GET, PUT');
+    res.status(405).json({ error: 'Method not allowed.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Unknown error' });
+  }
 }

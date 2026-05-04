@@ -13,6 +13,9 @@
   --ship: #ff5b4f;
   --blue-bg: #ebf5ff;
   --blue-text: #0068d6;
+  --button-primary-bg: #000000;
+  --button-primary-hover: #333333;
+  --button-primary-text: #ffffff;
   --ring: rgba(0, 0, 0, 0.08) 0 0 0 1px;
   --light-ring: rgb(235, 235, 235) 0 0 0 1px;
   --card-shadow:
@@ -71,14 +74,14 @@ button:disabled {
 }
 
 button.primary {
-  background: var(--text);
+  background: var(--button-primary-bg);
   box-shadow: none;
-  color: #ffffff;
+  color: var(--button-primary-text);
 }
 
 button.primary:hover:not(:disabled) {
-  background: #000000;
-  color: #ffffff;
+  background: var(--button-primary-hover);
+  color: var(--button-primary-text);
 }
 
 button:focus-visible,

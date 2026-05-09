@@ -24,6 +24,7 @@ const pool = databaseUrl
     })
   : null;
 let schemaReady = null;
+const importableImageExts = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.heic', '.heif', '.avif', '.tif', '.tiff']);
 
 function getMimeType(filename) {
   const ext = path.extname(filename).toLowerCase();
@@ -153,7 +154,7 @@ async function importImageFile(file) {
   const sourceName = normalizeImportedName(file?.name);
   const inputBuffer = decodeBase64(file?.data, sourceName);
   const ext = path.extname(sourceName).toLowerCase();
-  const shouldTranscode = !['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.heic', '.heif', '.avif', '.tif', '.tiff'].has(ext);
+  const shouldTranscode = !importableImageExts.has(ext);
 
   const buffer = shouldTranscode
     ? await sharp(inputBuffer, { limitInputPixels: false }).rotate().jpeg({ quality: 82, mozjpeg: true }).toBuffer()

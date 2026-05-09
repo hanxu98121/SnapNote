@@ -58,26 +58,43 @@ function cleanFilename(value) {
 async function ensureDatabase() {
   if (!pool) throw new Error('Missing Neon connection string. Set NEON_DATABASE_URL or DATABASE_URL.');
   if (!schemaReady) {
-    schemaReady = (async () => {
-      await pool.query(`
-        create table if not exists snapnote_state (
-          key text primary key,
-          value jsonb not null,
-          updated_at timestamptz not null default now()
-        );
-
-        create table if not exists snapnote_images (
-          id text primary key,
-          name text not null unique,
-          mime_type text not null,
-          size integer not null,
-          data bytea not null,
-          created_at timestamptz not null default now()
-        );
-      `);
-    })();
+    schemaReady = initSchema().catch((error) => {
+      schemaReady = null;
+      throw error;
+    });
   }
   await schemaReady;
+}
+
+async function initSchema() {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await client.query("select pg_advisory_xact_lock(hashtext('snapnote-schema'))");
+    await client.query(`
+      create table if not exists snapnote_state (
+        key text primary key,
+        value jsonb not null,
+        updated_at timestamptz not null default now()
+      )
+    `);
+    await client.query(`
+      create table if not exists snapnote_images (
+        id text primary key,
+        name text not null unique,
+        mime_type text not null,
+        size integer not null,
+        data bytea not null,
+        created_at timestamptz not null default now()
+      )
+    `);
+    await client.query('commit');
+  } catch (error) {
+    await client.query('rollback').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function query(text, params = []) {

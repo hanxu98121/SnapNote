@@ -851,8 +851,15 @@ function GroupRow({
       >
         <div className="image-stack">
           {group.images.length === 0 ? (
-            <div className="drop-placeholder">
-              {supportsDragDrop ? 'Tap Upload photos or drop images here' : 'Tap Upload photos to add images'}
+            <div className="drop-placeholder empty-group-panel">
+              <div className="empty-group-copy">
+                <strong>No photos in this group</strong>
+                <span>{supportsDragDrop ? 'Upload photos here, or drag images into this group.' : 'Tap Upload photos to add images on iPhone.'}</span>
+              </div>
+              <div className="empty-group-actions">
+                <button type="button" className="primary" onClick={openUploadPicker}>Upload photos</button>
+                <button type="button" className="danger" onClick={onDeleteGroup}>Delete group</button>
+              </div>
             </div>
           ) : null}
           {group.images.map((imageId) => {

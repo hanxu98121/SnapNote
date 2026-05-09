@@ -525,6 +525,39 @@ code {
   min-height: 180px;
 }
 
+.empty-group-panel {
+  align-content: center;
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.empty-group-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.empty-group-copy strong {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.empty-group-copy span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.empty-group-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
 .thumb {
   background: #ffffff;
   border-radius: 8px;
@@ -810,6 +843,14 @@ code {
   .group-actions button {
     flex: 1 1 140px;
   }
+
+  .empty-group-actions {
+    width: 100%;
+  }
+
+  .empty-group-actions button {
+    flex: 1 1 100%;
+  }
 }
 
 @media (hover: none) and (pointer: coarse) {
@@ -827,6 +868,11 @@ code {
 
   .drop-placeholder {
     min-height: 96px;
+  }
+
+  .empty-group-panel {
+    min-height: 160px;
+    padding: 18px;
   }
 
   .thumb {

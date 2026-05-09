@@ -1,12 +1,12 @@
 # SnapNote
 
-Screenshot-to-Obsidian workflow for grouped screenshots, with local storage and optional Vercel Blob sync.
+Screenshot-to-Obsidian workflow for grouped screenshots, with Neon-backed storage.
 
 ## What It Does
 
 - Bulk load images from your device, with automatic resize to max width `1800px` and JPEG compression.
 - Keep image groups and Markdown output in the browser for local continuity.
-- Store images locally in `input_image/` during local development, or in private Vercel Blob when deployed.
+- Store images and group state in Neon PostgreSQL.
 - Export all generated Markdown into one combined file with a top-level `# SnapNote Output` heading.
 - Delete mistaken images from the UI.
 
@@ -32,14 +32,14 @@ Open the Vite URL, usually `http://127.0.0.1:5173`.
 9. Click `Save to output` to write a `.md` file under `output/`.
 10. Click `Export Markdown` to download or share a combined Markdown file.
 
-## Vercel Setup
+## Neon Setup
 
-This branch supports private Vercel Blob storage.
+This branch uses Neon as the backend store.
 
-1. Create or connect a private Blob store in Vercel.
-2. Link the project so `BLOB_READ_WRITE_TOKEN` is injected into the project.
-3. Run `vercel env pull` locally if you want matching environment variables.
-4. Deploy with Git or `vercel deploy`.
+1. Create a Neon database.
+2. Set `NEON_DATABASE_URL` (or `DATABASE_URL`) in your environment.
+3. Run `npm run dev` locally.
+4. Deploy with your preferred platform.
 
 ## Configuration
 
@@ -63,13 +63,13 @@ Do not put API keys in source files. The current UI keeps the key in browser mem
 
 # SnapNote
 
-用于整理截图到 Obsidian 的工作流工具，支持本地存储和可选的 Vercel Blob 云端同步。
+用于整理截图到 Obsidian 的工作流工具，使用 Neon PostgreSQL 作为后端存储。
 
 ## 功能
 
 - 批量导入图片，自动缩放到最大宽度 `1800px` 并压缩为 JPEG。
 - 图片分组和 Markdown 输出保存在浏览器中，方便本地连续使用。
-- 本地开发时图片保存在 `input_image/`，部署到 Vercel 时可使用私有 Blob 存储。
+- 图片和分组状态保存在 Neon PostgreSQL。
 - 一键导出全部 Markdown，合并成一个文件，顶部带一级标题 `# SnapNote Output`。
 - 支持在界面里删除误上传的图片。
 
@@ -95,14 +95,14 @@ npm run dev
 9. 点击 `Save to output`，把单个 `.md` 文件写入 `output/`。
 10. 点击 `Export Markdown`，下载或分享合并后的 Markdown。
 
-## Vercel 配置
+## Neon 配置
 
-这个分支支持私有 Vercel Blob 存储。
+这个分支使用 Neon 作为后端存储。
 
-1. 在 Vercel 里创建或连接一个 private Blob store。
-2. 把项目连接到 Blob store，让 `BLOB_READ_WRITE_TOKEN` 自动注入项目环境变量。
-3. 如果本地环境需要一致配置，可以执行 `vercel env pull`。
-4. 通过 Git 或 `vercel deploy` 部署。
+1. 创建一个 Neon 数据库。
+2. 设置 `NEON_DATABASE_URL`（或 `DATABASE_URL`）环境变量。
+3. 本地运行 `npm run dev`。
+4. 使用你自己的部署方式上线。
 
 ## 配置
 

@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { upload } from '@vercel/blob/client';
 import logoUrl from './assets/snapnote-logo.png';
 import './styles.css';
 
@@ -175,33 +174,9 @@ function App() {
     }
 
     setBulkLoadStatus(`Preparing ${files.length} image(s)...`);
-    try {
-      const uploaded = [];
-      for (let index = 0; index < files.length; index += 1) {
-        const file = files[index];
-        setBulkLoadStatus(`Resizing ${file.name} (${index + 1}/${files.length})...`);
-        const uploadFile = await prepareImageForUpload(file);
-        setBulkLoadStatus(`Uploading ${uploadFile.name} (${index + 1}/${files.length})...`);
-        const blob = await upload(`images/${Date.now()}-${uploadFile.name}`, uploadFile, {
-          access: 'private',
-          handleUploadUrl: '/api/import-images',
-          multipart: true,
-          contentType: uploadFile.type,
-          onUploadProgress: ({ percentage }) => {
-            setBulkLoadStatus(`Uploading ${uploadFile.name} (${Math.round(percentage)}%)`);
-          }
-        });
-        uploaded.push(imageFromUploadedBlob(blob));
-      }
-      setBulkLoadStatus(`Imported ${files.length} image(s).`);
-      return uploaded;
-    } catch (err) {
-      if (!isBlobUploadUnavailable(err)) throw err;
-      setBulkLoadStatus('Blob upload unavailable. Saving images locally...');
-      const imported = await uploadImagesLocally(files);
-      setBulkLoadStatus(`Imported ${files.length} image(s) locally.`);
-      return imported;
-    }
+    const imported = await importImages(files);
+    setBulkLoadStatus(`Imported ${files.length} image(s).`);
+    return imported;
   }
 
   async function dropFilesIntoGroup(files, groupId) {
@@ -951,7 +926,7 @@ function normalizeImages(rawImages) {
     ...image,
     id: image.id || image.pathname || image.name,
     name: image.name || image.pathname || image.id,
-    source: image.source || 'local',
+    source: image.source || 'neon',
     size: typeof image.size === 'number' ? image.size : undefined
   }));
 }
@@ -1003,7 +978,6 @@ function buildImageIdByAlias(images) {
     if (image.name) aliases.set(image.name, image.id);
     if (image.pathname) {
       aliases.set(image.pathname, image.id);
-      aliases.set(`blob:${image.pathname}`, image.id);
     }
   }
   return aliases;
@@ -1066,7 +1040,7 @@ function mergeImages(currentImages, incomingImages) {
   return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function uploadImagesLocally(files) {
+async function importImages(files) {
   const payload = [];
   for (const file of files) {
     const uploadFile = await prepareImageForUpload(file);
@@ -1084,19 +1058,6 @@ async function uploadImagesLocally(files) {
   if (!response.ok) throw new Error(await readError(response));
   const data = await response.json();
   return normalizeImages(data.imported || []);
-}
-
-function imageFromUploadedBlob(blob) {
-  const pathname = blob?.pathname || '';
-  const name = pathname.split('/').pop() || blob?.url?.split('/').pop() || 'image.jpg';
-  return {
-    id: pathname ? `blob:${pathname}` : blob?.url || name,
-    name,
-    pathname,
-    url: pathname ? `/api/blob-view?pathname=${encodeURIComponent(pathname)}` : blob?.url,
-    source: 'cloud',
-    size: typeof blob?.size === 'number' ? blob.size : undefined
-  };
 }
 
 function isRawImageFile(file) {
@@ -1186,10 +1147,6 @@ function blobToBase64(blob) {
     reader.onerror = () => reject(new Error('Could not read image.'));
     reader.readAsDataURL(blob);
   });
-}
-
-function isBlobUploadUnavailable(error) {
-  return /BLOB_READ_WRITE_TOKEN|501|not configured/i.test(error.message || '');
 }
 
 function formatBytes(bytes) {

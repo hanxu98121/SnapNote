@@ -84,6 +84,14 @@ button.primary:hover:not(:disabled) {
   color: var(--button-primary-text);
 }
 
+button.danger {
+  color: #9b1c1c;
+}
+
+button.danger:hover:not(:disabled) {
+  background: #fffafa;
+}
+
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
@@ -164,6 +172,10 @@ textarea:focus-visible {
 }
 
 .bulk-load-input {
+  display: none;
+}
+
+.group-upload-input {
   display: none;
 }
 
@@ -469,6 +481,13 @@ code {
   flex-direction: column;
   gap: 12px;
   justify-content: flex-start;
+}
+
+.group-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .group-id {
@@ -782,5 +801,39 @@ code {
   .image-actions {
     grid-column: 1 / -1;
     flex-direction: row;
+  }
+
+  .group-actions {
+    width: 100%;
+  }
+
+  .group-actions button {
+    flex: 1 1 140px;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  button {
+    min-height: 44px;
+  }
+
+  .image-column {
+    cursor: default;
+  }
+
+  .group-row.drag-over .image-column {
+    box-shadow: none;
+  }
+
+  .drop-placeholder {
+    min-height: 96px;
+  }
+
+  .thumb {
+    padding: 10px;
+  }
+
+  .image-actions button {
+    min-height: 32px;
   }
 }

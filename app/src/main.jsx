@@ -39,11 +39,16 @@ const IMAGE_FILE_EXTENSIONS = new Set([
   '.avif',
   ...RAW_IMAGE_EXTENSIONS
 ]);
+const IMAGE_UPLOAD_ACCEPT = 'image/*,.dng,.cr2,.cr3,.nef,.arw,.orf,.rw2,.raf,.pef,.srw,.x3f,.iiq,.kdc,.rwl,.3fr,.heic,.heif,.bmp,.gif,.tif,.tiff,.avif';
 
 function App() {
   const [images, setImages] = useState([]);
   const [groups, setGroups] = useState([]);
   const [selectedImageIds, setSelectedImageIds] = useState([]);
+  const [supportsDragDrop, setSupportsDragDrop] = useState(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return true;
+    return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  });
   const groupsRef = useRef([]);
   const bulkLoadInputRef = useRef(null);
   const [loading, setLoading] = useState(true);
@@ -59,6 +64,19 @@ function App() {
   useEffect(() => {
     refreshState();
     refreshSystemPrompt();
+  }, []);
+
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const query = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const handleChange = (event) => setSupportsDragDrop(event.matches);
+    setSupportsDragDrop(query.matches);
+    if (query.addEventListener) {
+      query.addEventListener('change', handleChange);
+      return () => query.removeEventListener('change', handleChange);
+    }
+    query.addListener(handleChange);
+    return () => query.removeListener(handleChange);
   }, []);
 
   async function refreshSystemPrompt() {
@@ -482,6 +500,22 @@ function App() {
     ]);
   }
 
+  async function deleteGroup(groupId) {
+    setError('');
+    try {
+      const group = groupsRef.current.find((item) => item.id === groupId);
+      if (!group) return;
+      if (group.images.length > 0) {
+        setError('Delete all images in the group before removing it.');
+        return;
+      }
+      if (!window.confirm(`Delete empty group ${groupId}?`)) return;
+      await persistGroups(groupsRef.current.filter((item) => item.id !== groupId));
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   const generatedCount = groups.filter((group) => group.markdown?.trim()).length;
   const savedCount = groups.filter((group) => group.status === 'saved').length;
   const queuedCount = groups.filter((group) => group.images.length > 0 && group.status !== 'saved').length;
@@ -503,7 +537,7 @@ function App() {
           ref={bulkLoadInputRef}
           className="bulk-load-input"
           type="file"
-          accept="image/*,.dng,.cr2,.cr3,.nef,.arw,.orf,.rw2,.raf,.pef,.srw,.x3f,.iiq,.kdc,.rwl,.3fr,.heic,.heif,.bmp,.gif,.tif,.tiff,.avif"
+          accept={IMAGE_UPLOAD_ACCEPT}
           multiple
           onChange={handleBulkLoadChange}
         />
@@ -618,6 +652,8 @@ function App() {
                 onDropFiles={(files) => dropFilesIntoGroup(files, group.id)}
                 onSplitImage={splitImage}
                 onDeleteImage={deleteImage}
+                onDeleteGroup={() => deleteGroup(group.id)}
+                supportsDragDrop={supportsDragDrop}
                 onToggleImageSelection={(imageId) =>
                   setSelectedImageIds((selected) =>
                     selected.includes(imageId) ? selected.filter((id) => id !== imageId) : [...selected, imageId]
@@ -726,9 +762,12 @@ function GroupRow({
   onDropFiles,
   onSplitImage,
   onDeleteImage,
+  onDeleteGroup,
+  supportsDragDrop,
   onToggleImageSelection
 }) {
   const [dragOver, setDragOver] = useState(false);
+  const uploadInputRef = useRef(null);
 
   function handleDragStart(event, imageId) {
     event.dataTransfer.setData('application/json', JSON.stringify({ imageId, fromGroupId: group.id }));
@@ -736,6 +775,7 @@ function GroupRow({
   }
 
   async function handleDrop(event) {
+    if (!supportsDragDrop) return;
     event.preventDefault();
     event.stopPropagation();
     setDragOver(false);
@@ -751,43 +791,78 @@ function GroupRow({
     await onDropImage(payload.imageId, payload.fromGroupId, group.id);
   }
 
+  function openUploadPicker() {
+    uploadInputRef.current?.click();
+  }
+
+  async function handleUploadChange(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (files.length === 0) return;
+    await onDropFiles(files);
+  }
+
   return (
     <article
       className={`group-row ${dragOver ? 'drag-over' : ''}`}
-      onDragOver={(event) => {
+      onDragOver={supportsDragDrop ? (event) => {
         event.preventDefault();
         setDragOver(true);
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={handleDrop}
+      } : undefined}
+      onDragLeave={supportsDragDrop ? () => setDragOver(false) : undefined}
+      onDrop={supportsDragDrop ? handleDrop : undefined}
     >
       <section className="cell group-meta">
         <div className="group-id">
           <strong>{group.id}</strong>
           <StatusBadge status={group.status} />
         </div>
+        <div className="group-actions">
+          <button type="button" onClick={openUploadPicker}>Upload photos</button>
+          <button
+            type="button"
+            className="danger"
+            onClick={onDeleteGroup}
+            disabled={group.images.length > 0}
+            title={group.images.length > 0 ? 'Remove all images from this group first.' : 'Delete this empty group.'}
+          >
+            Delete group
+          </button>
+          <input
+            ref={uploadInputRef}
+            className="group-upload-input"
+            type="file"
+            accept={IMAGE_UPLOAD_ACCEPT}
+            multiple
+            onChange={handleUploadChange}
+          />
+        </div>
         <div className="group-path">{group.outputFile || `${group.images.length} image${group.images.length === 1 ? '' : 's'}`}</div>
       </section>
 
       <section
         className="cell image-column"
-        onDragOver={(event) => {
+        onDragOver={supportsDragDrop ? (event) => {
           event.preventDefault();
           event.stopPropagation();
           setDragOver(true);
-        }}
-        onDrop={handleDrop}
+        } : undefined}
+        onDrop={supportsDragDrop ? handleDrop : undefined}
       >
         <div className="image-stack">
-          {group.images.length === 0 ? <div className="drop-placeholder">Drop images here</div> : null}
+          {group.images.length === 0 ? (
+            <div className="drop-placeholder">
+              {supportsDragDrop ? 'Tap Upload photos or drop images here' : 'Tap Upload photos to add images'}
+            </div>
+          ) : null}
           {group.images.map((imageId) => {
             const image = imageMap.get(imageId);
             const selected = selectedImageIds.includes(imageId);
             return (
               <figure
                 className={`thumb image-card ${selected ? 'selected' : ''}`}
-                draggable
-                onDragStart={(event) => handleDragStart(event, imageId)}
+                draggable={supportsDragDrop}
+                onDragStart={supportsDragDrop ? (event) => handleDragStart(event, imageId) : undefined}
                 key={imageId}
               >
                 <div className="thumb-preview">

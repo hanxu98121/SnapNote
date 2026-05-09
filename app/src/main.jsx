@@ -817,26 +817,6 @@ function GroupRow({
           <strong>{group.id}</strong>
           <StatusBadge status={group.status} />
         </div>
-        <div className="group-actions">
-          <button type="button" onClick={openUploadPicker}>Upload photos</button>
-          <button
-            type="button"
-            className="danger"
-            onClick={onDeleteGroup}
-            disabled={group.images.length > 0}
-            title={group.images.length > 0 ? 'Remove all images from this group first.' : 'Delete this empty group.'}
-          >
-            Delete group
-          </button>
-          <input
-            ref={uploadInputRef}
-            className="group-upload-input"
-            type="file"
-            accept={IMAGE_UPLOAD_ACCEPT}
-            multiple
-            onChange={handleUploadChange}
-          />
-        </div>
         <div className="group-path">{group.outputFile || `${group.images.length} image${group.images.length === 1 ? '' : 's'}`}</div>
       </section>
 
@@ -849,6 +829,14 @@ function GroupRow({
         } : undefined}
         onDrop={supportsDragDrop ? handleDrop : undefined}
       >
+        <input
+          ref={uploadInputRef}
+          className="group-upload-input"
+          type="file"
+          accept={IMAGE_UPLOAD_ACCEPT}
+          multiple
+          onChange={handleUploadChange}
+        />
         <div className="image-stack">
           {group.images.length === 0 ? (
             <div className="drop-placeholder empty-group-panel">
@@ -858,7 +846,6 @@ function GroupRow({
               </div>
               <div className="empty-group-actions">
                 <button type="button" className="primary" onClick={openUploadPicker}>Upload photos</button>
-                <button type="button" className="danger" onClick={onDeleteGroup}>Delete group</button>
               </div>
             </div>
           ) : null}
@@ -905,6 +892,11 @@ function GroupRow({
             );
           })}
         </div>
+        {group.images.length === 0 ? (
+          <div className="empty-group-delete-row">
+            <button type="button" className="danger" onClick={onDeleteGroup}>Delete group</button>
+          </div>
+        ) : null}
       </section>
 
       <section className="cell instruction-column">

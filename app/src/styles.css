@@ -558,6 +558,12 @@ code {
   justify-content: center;
 }
 
+.empty-group-delete-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
 .thumb {
   background: #ffffff;
   border-radius: 8px;
@@ -844,11 +850,13 @@ code {
     flex: 1 1 140px;
   }
 
-  .empty-group-actions {
+  .empty-group-actions,
+  .empty-group-delete-row {
     width: 100%;
   }
 
-  .empty-group-actions button {
+  .empty-group-actions button,
+  .empty-group-delete-row button {
     flex: 1 1 100%;
   }
 }

@@ -176,7 +176,37 @@ textarea:focus-visible {
 }
 
 .group-upload-input {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
+.upload-trigger {
+  align-items: center;
+  background: var(--button-primary-bg);
+  border-radius: 6px;
+  box-shadow: none;
+  color: var(--button-primary-text);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 500;
+  gap: 8px;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.upload-trigger:hover {
+  background: var(--button-primary-hover);
 }
 
 .page {

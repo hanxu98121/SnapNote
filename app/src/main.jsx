@@ -174,7 +174,7 @@ function App() {
     }
 
     setBulkLoadStatus(`Preparing ${files.length} image(s)...`);
-    const imported = await importImages(files);
+    const imported = await importImages(files, (message) => setBulkLoadStatus(message));
     setBulkLoadStatus(`Imported ${files.length} image(s).`);
     return imported;
   }
@@ -742,7 +742,7 @@ function GroupRow({
   onToggleImageSelection
 }) {
   const [dragOver, setDragOver] = useState(false);
-  const uploadInputRef = useRef(null);
+  const uploadInputId = `${group.id}-upload-input`;
 
   function handleDragStart(event, imageId) {
     event.dataTransfer.setData('application/json', JSON.stringify({ imageId, fromGroupId: group.id }));
@@ -764,10 +764,6 @@ function GroupRow({
     if (!raw) return;
     const payload = JSON.parse(raw);
     await onDropImage(payload.imageId, payload.fromGroupId, group.id);
-  }
-
-  function openUploadPicker() {
-    uploadInputRef.current?.click();
   }
 
   async function handleUploadChange(event) {
@@ -805,7 +801,7 @@ function GroupRow({
         onDrop={supportsDragDrop ? handleDrop : undefined}
       >
         <input
-          ref={uploadInputRef}
+          id={uploadInputId}
           className="group-upload-input"
           type="file"
           accept={IMAGE_UPLOAD_ACCEPT}
@@ -820,7 +816,9 @@ function GroupRow({
                 <span>{supportsDragDrop ? 'Upload photos here, or drag images into this group.' : 'Tap Upload photos to add images on iPhone.'}</span>
               </div>
               <div className="empty-group-actions">
-                <button type="button" className="primary" onClick={openUploadPicker}>Upload photos</button>
+                <label className="primary upload-trigger" htmlFor={uploadInputId}>
+                  Upload photos
+                </label>
               </div>
             </div>
           ) : null}
@@ -1040,21 +1038,29 @@ function mergeImages(currentImages, incomingImages) {
   return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function importImages(files) {
+async function importImages(files, onStatus) {
   const payload = [];
-  for (const file of files) {
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    onStatus?.(`Resizing ${file.name} (${index + 1}/${files.length})...`);
     const uploadFile = await prepareImageForUpload(file);
+    onStatus?.(`Encoding ${uploadFile.name} (${index + 1}/${files.length})...`);
     payload.push({
       name: uploadFile.name,
       data: await blobToBase64(uploadFile)
     });
   }
 
+  onStatus?.(`Uploading ${files.length} image(s) to Neon...`);
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 120_000);
   const response = await fetch('/api/import-images', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ files: payload })
+    body: JSON.stringify({ files: payload }),
+    signal: controller.signal
   });
+  window.clearTimeout(timeoutId);
   if (!response.ok) throw new Error(await readError(response));
   const data = await response.json();
   return normalizeImages(data.imported || []);

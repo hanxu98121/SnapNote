@@ -1,4 +1,4 @@
-import { del } from '@vercel/blob';
+import { deleteImage } from './_lib/neon.js';
 
 export default async function handler(req, res) {
   try {
@@ -9,14 +9,13 @@ export default async function handler(req, res) {
     }
 
     const image = req.body?.image || {};
-    const pathname = image.pathname || (typeof image.id === 'string' && image.id.startsWith('blob:') ? image.id.slice(5) : '');
-    if (!pathname) {
-      res.status(400).json({ error: 'Missing Blob pathname.' });
+    const deleted = await deleteImage(image);
+    if (!deleted) {
+      res.status(404).json({ error: 'Image not found.' });
       return;
     }
 
-    await del(pathname);
-    res.status(200).json({ deleted: pathname });
+    res.status(200).json({ deleted });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Unknown error' });
   }

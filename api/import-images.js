@@ -1,4 +1,4 @@
-import { handleUpload } from '@vercel/blob/client';
+import { importImageFile } from './_lib/neon.js';
 
 export default async function handler(req, res) {
   try {
@@ -8,25 +8,18 @@ export default async function handler(req, res) {
       return;
     }
 
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      res.status(501).json({ error: 'BLOB_READ_WRITE_TOKEN is not configured for this deployment.' });
+    const files = Array.isArray(req.body?.files) ? req.body.files : [];
+    if (files.length === 0) {
+      res.status(400).json({ error: 'No files were provided.' });
       return;
     }
 
-    const result = await handleUpload({
-      request: req,
-      body: req.body,
-      onBeforeGenerateToken: async (pathname) => ({
-        allowedContentTypes: ['image/jpeg'],
-        maximumSizeInBytes: 50 * 1024 * 1024,
-        addRandomSuffix: false,
-        allowOverwrite: false,
-        tokenPayload: pathname
-      }),
-      onUploadCompleted: async () => {}
-    });
+    const imported = [];
+    for (const file of files) {
+      imported.push(await importImageFile(file));
+    }
 
-    res.status(200).json(result);
+    res.status(200).json({ imported });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Unknown error' });
   }

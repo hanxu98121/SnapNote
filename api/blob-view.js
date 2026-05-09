@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream';
-import { get } from '@vercel/blob';
+import { query as neonQuery } from './_lib/neon.js';
 
 export default async function handler(req, res) {
   try {
@@ -10,15 +10,16 @@ export default async function handler(req, res) {
       return;
     }
 
-    const result = await get(pathname, { access: 'private' });
-    if (result?.statusCode !== 200) {
+    const result = await neonQuery('select name, mime_type, data from snapnote_images where name = $1', [pathname]);
+    const row = result.rows[0];
+    if (!row) {
       res.status(404).send('Not found');
       return;
     }
 
-    res.setHeader('Content-Type', result.blob.contentType || 'application/octet-stream');
+    res.setHeader('Content-Type', row.mime_type || 'application/octet-stream');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    Readable.fromWeb(result.stream).pipe(res);
+    Readable.from(Buffer.from(row.data)).pipe(res);
   } catch (error) {
     res.status(500).json({ error: error.message || 'Unknown error' });
   }

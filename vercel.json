@@ -1,10 +1,10 @@
 {
   "functions": {
     "api/generate/[groupId].js": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/import-images.js": {
-      "maxDuration": 60
+      "maxDuration": 300
     }
   }
 }
